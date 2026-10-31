@@ -1,0 +1,8 @@
+{
+  "name": "NORVA — Luxury Fragrance",
+  "description": "NORVA is a premium luxury perfume and home fragrance e-commerce website featuring five signature fragrances, an exclusive home collection, immersive 3D glass bottle visuals, elegant product pages, and a sophisticated dark luxury shopping experience.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
