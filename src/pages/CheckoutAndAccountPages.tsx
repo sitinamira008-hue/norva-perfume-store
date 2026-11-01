@@ -91,24 +91,48 @@ export const CheckoutPage: React.FC = () => {
 
   // Order Submission & Anti-Duplicate Idempotency Key
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submittingLockRef = useRef(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [completedOrder, setCompletedOrder] = useState<PlacedOrder | null>(null);
 
-  const cartSignature = useMemo(
+  const fullNameInputRef = useRef<HTMLInputElement | null>(null);
+  const emailInputRef = useRef<HTMLInputElement | null>(null);
+  const phoneInputRef = useRef<HTMLInputElement | null>(null);
+  const addressInputRef = useRef<HTMLInputElement | null>(null);
+  const cityInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Keep proxy auth token cache warm while customer fills out checkout form
+  useEffect(() => {
+    const ping = () => {
+      fetch('/api/health', { credentials: 'include' }).catch(() => {});
+    };
+    ping();
+    const timer = window.setInterval(ping, 45000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const submissionSignature = useMemo(
     () =>
-      cart
-        .map((i) => `${i.key}:${i.quantity}`)
-        .sort()
-        .join('|'),
-    [cart],
+      [
+        cart
+          .map((i) => `${i.key}:${i.quantity}`)
+          .sort()
+          .join('|'),
+        phone.trim(),
+        city.trim().toLowerCase(),
+        paymentMethod,
+        shippingSpeed,
+        appliedCoupon?.code ?? '',
+      ].join('::'),
+    [cart, phone, city, paymentMethod, shippingSpeed, appliedCoupon],
   );
   const idempotencyRef = useRef<{ sig: string; key: string }>({
     sig: '',
     key: generateIdempotencyKey(),
   });
-  if (idempotencyRef.current.sig !== cartSignature) {
+  if (idempotencyRef.current.sig !== submissionSignature) {
     idempotencyRef.current = {
-      sig: cartSignature,
+      sig: submissionSignature,
       key: generateIdempotencyKey(),
     };
   }
@@ -221,7 +245,7 @@ export const CheckoutPage: React.FC = () => {
 
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (cart.length === 0 || isSubmitting) return;
+    if (cart.length === 0 || isSubmitting || submittingLockRef.current) return;
 
     if (stockIssueMessage) {
       setSubmitError(stockIssueMessage);
@@ -237,22 +261,27 @@ export const CheckoutPage: React.FC = () => {
 
     if (cleanName.length < 2) {
       setSubmitError('Please enter the recipient’s full name.');
+      fullNameInputRef.current?.focus();
       return;
     }
-    if (!cleanEmail.includes('@') || cleanEmail.length < 5) {
-      setSubmitError('Please enter a valid email address for your order confirmation.');
+    if (cleanEmail && (!cleanEmail.includes('@') || cleanEmail.length < 5)) {
+      setSubmitError('Please enter a valid email address (or leave it blank for COD).');
+      emailInputRef.current?.focus();
       return;
     }
     if (phoneDigits.length < 7) {
-      setSubmitError('Please enter a valid phone / WhatsApp number (at least 7 digits).');
+      setSubmitError('Please enter a valid phone / WhatsApp number (e.g. 0300-1234567).');
+      phoneInputRef.current?.focus();
       return;
     }
     if (cleanAddress.length < 4) {
       setSubmitError('Please enter your complete street and house delivery address.');
+      addressInputRef.current?.focus();
       return;
     }
     if (cleanCity.length < 2) {
       setSubmitError('Please select or enter your delivery city.');
+      cityInputRef.current?.focus();
       return;
     }
 
@@ -266,6 +295,7 @@ export const CheckoutPage: React.FC = () => {
       country: country.trim() || 'Pakistan',
     };
 
+    submittingLockRef.current = true;
     setIsSubmitting(true);
     setSubmitError(null);
     updateProfile(customerData);
@@ -288,8 +318,8 @@ export const CheckoutPage: React.FC = () => {
       setCompletedOrder(created);
       showToast(
         created.duplicatePrevented
-          ? `Existing order ${created.orderNumber} retrieved`
-          : `Order ${created.orderNumber} confirmed`,
+          ? `Order ${created.orderNumber} already confirmed`
+          : `Order ${created.orderNumber} confirmed!`,
       );
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
@@ -298,6 +328,7 @@ export const CheckoutPage: React.FC = () => {
       setSubmitError(msg);
       showToast(msg);
     } finally {
+      submittingLockRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -594,7 +625,11 @@ export const CheckoutPage: React.FC = () => {
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-7 sm:gap-10 items-start">
           {/* Left Form: Shipping, Courier & Settlement */}
-          <form onSubmit={handlePlaceOrder} className="lg:col-span-7 space-y-6 sm:space-y-8">
+          <form
+            onSubmit={handlePlaceOrder}
+            noValidate
+            className="lg:col-span-7 space-y-6 sm:space-y-8"
+          >
             {/* 1. Client & City Shipping Information */}
             <div className="p-4 sm:p-8 rounded-2xl bg-[#0a0a0f] border border-white/[0.08] space-y-4 sm:space-y-5">
               <h2 className="font-serif-display text-xl sm:text-2xl text-white">
@@ -605,6 +640,7 @@ export const CheckoutPage: React.FC = () => {
                 <div className="sm:col-span-2">
                   <label className="block text-xs text-white/60 mb-1.5">Full Name *</label>
                   <input
+                    ref={fullNameInputRef}
                     type="text"
                     required
                     value={fullName}
@@ -618,10 +654,12 @@ export const CheckoutPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs text-white/60 mb-1.5">Email Address *</label>
+                  <label className="block text-xs text-white/60 mb-1.5">
+                    Email Address <span className="text-[10.5px] text-white/40">(Optional)</span>
+                  </label>
                   <input
+                    ref={emailInputRef}
                     type="email"
-                    required
                     value={email}
                     onChange={(e) => {
                       setEmail(e.target.value);
@@ -638,6 +676,7 @@ export const CheckoutPage: React.FC = () => {
                     <span className="text-[10.5px] text-white/40">(Used for Order Tracking)</span>
                   </label>
                   <input
+                    ref={phoneInputRef}
                     type="tel"
                     required
                     value={phone}
@@ -653,6 +692,7 @@ export const CheckoutPage: React.FC = () => {
                 <div className="sm:col-span-2">
                   <label className="block text-xs text-white/60 mb-1.5">Street Address *</label>
                   <input
+                    ref={addressInputRef}
                     type="text"
                     required
                     value={address}
@@ -712,6 +752,7 @@ export const CheckoutPage: React.FC = () => {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
                     <div>
                       <input
+                        ref={cityInputRef}
                         type="text"
                         required
                         value={city}

@@ -121,6 +121,7 @@ export const AdminDashboardPage: React.FC = () => {
     isAdminAuthChecking,
     isAdminLoading,
     loginAdmin,
+    changeAdminPassword,
     logoutAdmin,
     products,
     lowStockProducts,
@@ -156,11 +157,20 @@ export const AdminDashboardPage: React.FC = () => {
   } = useStore();
 
   // Login Form State
-  const [loginEmail, setLoginEmail] = useState('');
+  const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+
+  // Authenticated Password Rotation Modal State
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [currentPwdInput, setCurrentPwdInput] = useState('');
+  const [newPwdInput, setNewPwdInput] = useState('');
+  const [confirmPwdInput, setConfirmPwdInput] = useState('');
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+  const [passwordFormError, setPasswordFormError] = useState<string | null>(null);
+  const [passwordFormSuccess, setPasswordFormSuccess] = useState<string | null>(null);
 
   // Dashboard Workspace State
   const [activeTab, setActiveTab] = useState<AdminTab>('orders');
@@ -236,7 +246,7 @@ export const AdminDashboardPage: React.FC = () => {
     if (isLoggingIn) return;
     setIsLoggingIn(true);
     setLoginError(null);
-    const res = await loginAdmin(loginEmail, loginPassword);
+    const res = await loginAdmin(loginUsername.trim(), loginPassword);
     setIsLoggingIn(false);
     if (!res.ok) {
       setLoginError(res.error ?? 'Authentication failed');
@@ -244,6 +254,36 @@ export const AdminDashboardPage: React.FC = () => {
       setLoginError(null);
       setLoginPassword('');
     }
+  };
+
+  const handlePasswordChangeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isUpdatingPassword) return;
+    setPasswordFormError(null);
+    setPasswordFormSuccess(null);
+
+    if (newPwdInput.length < 8) {
+      setPasswordFormError('New password must be at least 8 characters long.');
+      return;
+    }
+    if (newPwdInput !== confirmPwdInput) {
+      setPasswordFormError('New password and confirmation do not match.');
+      return;
+    }
+
+    setIsUpdatingPassword(true);
+    const res = await changeAdminPassword(currentPwdInput, newPwdInput);
+    setIsUpdatingPassword(false);
+
+    if (!res.ok) {
+      setPasswordFormError(res.error ?? 'Failed to update password.');
+      return;
+    }
+
+    setCurrentPwdInput('');
+    setNewPwdInput('');
+    setConfirmPwdInput('');
+    setPasswordFormSuccess('Administrator password updated with bcrypt hashing. Other sessions have been revoked.');
   };
 
   // Computed Storefront & Order Counter Metrics
@@ -523,25 +563,28 @@ export const AdminDashboardPage: React.FC = () => {
             </h1>
             <p className="text-xs text-white/55">
               Customer orders, revenue reports, and database backups are strictly protected. Sign in
-              with your administrator email and password.
+              with your administrator username and password.
             </p>
           </div>
 
           <form onSubmit={handleLoginSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs text-white/65 mb-1.5" htmlFor="admin-gmail">
-                Administrator Email
+              <label className="block text-xs text-white/65 mb-1.5" htmlFor="admin-username">
+                Admin Username
               </label>
               <input
-                id="admin-gmail"
-                type="email"
+                id="admin-username"
+                type="text"
                 required
-                value={loginEmail}
+                autoComplete="username"
+                spellCheck={false}
+                autoCapitalize="none"
+                value={loginUsername}
                 onChange={(e) => {
-                  setLoginEmail(e.target.value);
+                  setLoginUsername(e.target.value);
                   setLoginError(null);
                 }}
-                placeholder="admin@gmail.com"
+                placeholder="Enter admin username"
                 className="w-full h-11 px-3.5 rounded-lg bg-[#050508] border border-white/15 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-[#d6be96]"
               />
             </div>
@@ -555,6 +598,7 @@ export const AdminDashboardPage: React.FC = () => {
                   id="admin-password"
                   type={showPassword ? 'text' : 'password'}
                   required
+                  autoComplete="current-password"
                   value={loginPassword}
                   onChange={(e) => {
                     setLoginPassword(e.target.value);
@@ -596,8 +640,11 @@ export const AdminDashboardPage: React.FC = () => {
             </button>
           </form>
 
-          <div className="pt-4 border-t border-white/[0.06] text-center">
-            <Link to="/" className="text-xs text-white/45 hover:text-white transition-colors">
+          <div className="pt-4 border-t border-white/[0.06] space-y-2 text-center">
+            <p className="text-[11px] text-white/40">
+              Private administrator access only. Public registration is disabled.
+            </p>
+            <Link to="/" className="inline-block text-xs text-white/45 hover:text-white transition-colors">
               ← Return to NORVA Storefront
             </Link>
           </div>
@@ -752,10 +799,26 @@ export const AdminDashboardPage: React.FC = () => {
           <div className="hidden lg:flex flex-col gap-2 pt-5 border-t border-white/[0.08]">
             <div className="px-2 pb-2">
               <p className="text-[11px] text-white/40">Authenticated Admin</p>
-              <p className="text-xs font-medium text-white truncate" title={adminSession.email}>
-                {adminSession.email}
+              <p
+                className="text-xs font-medium text-white font-mono-tabular truncate"
+                title={adminSession.username || adminSession.email}
+              >
+                {adminSession.username || adminSession.email}
               </p>
             </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setPasswordFormError(null);
+                setPasswordFormSuccess(null);
+                setIsPasswordModalOpen(true);
+              }}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-white/70 hover:text-white hover:bg-white/[0.05] transition-colors cursor-pointer text-left"
+            >
+              <Lock className="w-3.5 h-3.5 text-[#d6be96]" />
+              <span>Change Password</span>
+            </button>
 
             <Link
               to="/shop"
@@ -817,8 +880,21 @@ export const AdminDashboardPage: React.FC = () => {
               </button>
 
               <span className="hidden md:inline text-xs text-white/45 font-mono-tabular">
-                {adminSession.email}
+                {adminSession.username || adminSession.email}
               </span>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setPasswordFormError(null);
+                  setPasswordFormSuccess(null);
+                  setIsPasswordModalOpen(true);
+                }}
+                className="lg:hidden h-9 px-3 rounded-lg bg-white/[0.05] border border-white/10 text-xs text-white/80 inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <Lock className="w-3.5 h-3.5 text-[#d6be96]" />
+                <span>Password</span>
+              </button>
 
               <button
                 type="button"
@@ -2802,6 +2878,140 @@ export const AdminDashboardPage: React.FC = () => {
                 )}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* =====================================================================
+          AUTHENTICATED ADMIN PASSWORD ROTATION MODAL
+         ===================================================================== */}
+      {isPasswordModalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+          onClick={() => setIsPasswordModalOpen(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md rounded-2xl bg-[#0a0a0f] border border-white/15 shadow-[0_28px_90px_rgba(0,0,0,0.95)] p-5 sm:p-7 space-y-5"
+          >
+            <div className="flex items-start justify-between gap-4 pb-3 border-b border-white/[0.08]">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.2em] text-[#d6be96]">
+                  Account Security
+                </p>
+                <h2 className="font-serif-display text-2xl text-white mt-0.5">
+                  Change Admin Password
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPasswordModalOpen(false)}
+                aria-label="Close password modal"
+                className="w-8 h-8 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-white/75 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handlePasswordChangeSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs text-white/65 mb-1.5" htmlFor="current-admin-pwd">
+                  Current Password
+                </label>
+                <input
+                  id="current-admin-pwd"
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                  value={currentPwdInput}
+                  onChange={(e) => {
+                    setCurrentPwdInput(e.target.value);
+                    setPasswordFormError(null);
+                    setPasswordFormSuccess(null);
+                  }}
+                  placeholder="Enter current password"
+                  className="w-full h-11 px-3.5 rounded-lg bg-[#050508] border border-white/15 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-[#d6be96]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-white/65 mb-1.5" htmlFor="new-admin-pwd">
+                  New Password (minimum 8 characters)
+                </label>
+                <input
+                  id="new-admin-pwd"
+                  type="password"
+                  required
+                  minLength={8}
+                  autoComplete="new-password"
+                  value={newPwdInput}
+                  onChange={(e) => {
+                    setNewPwdInput(e.target.value);
+                    setPasswordFormError(null);
+                    setPasswordFormSuccess(null);
+                  }}
+                  placeholder="Enter strong new password"
+                  className="w-full h-11 px-3.5 rounded-lg bg-[#050508] border border-white/15 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-[#d6be96]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-white/65 mb-1.5" htmlFor="confirm-admin-pwd">
+                  Confirm New Password
+                </label>
+                <input
+                  id="confirm-admin-pwd"
+                  type="password"
+                  required
+                  minLength={8}
+                  autoComplete="new-password"
+                  value={confirmPwdInput}
+                  onChange={(e) => {
+                    setConfirmPwdInput(e.target.value);
+                    setPasswordFormError(null);
+                    setPasswordFormSuccess(null);
+                  }}
+                  placeholder="Re-enter new password"
+                  className="w-full h-11 px-3.5 rounded-lg bg-[#050508] border border-white/15 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-[#d6be96]"
+                />
+              </div>
+
+              {passwordFormError && (
+                <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-xs text-red-300">
+                  {passwordFormError}
+                </div>
+              )}
+
+              {passwordFormSuccess && (
+                <div className="p-3 rounded-lg bg-[#36d67e]/10 border border-[#36d67e]/35 text-xs text-[#36d67e]">
+                  {passwordFormSuccess}
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsPasswordModalOpen(false)}
+                  className="h-10 px-4 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-xs text-white cursor-pointer"
+                >
+                  Close
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUpdatingPassword}
+                  className="h-10 px-5 rounded-lg bg-[#f2e6d5] hover:bg-[#d6be96] disabled:opacity-60 text-[#050508] text-xs font-semibold inline-flex items-center gap-2 cursor-pointer"
+                >
+                  {isUpdatingPassword ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Updating...</span>
+                    </>
+                  ) : (
+                    <span>Update Password</span>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -6,6 +6,7 @@ import type { IncomingMessage } from 'node:http';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
+import bcrypt from 'bcryptjs';
 import express from 'express';
 import type { NextFunction, Request, Response } from 'express';
 import { WebSocket, WebSocketServer } from 'ws';
@@ -14,9 +15,21 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PORT = Number(process.env.PORT || 3000);
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'usman122';
+const BCRYPT_ROUNDS = 12;
+// Pre-computed salted bcrypt (cost 12) digest — plaintext password is NEVER stored in code or DB
+const INITIAL_ADMIN_USERNAME = 'usman122';
+const INITIAL_ADMIN_BCRYPT_HASH =
+  '$2b$12$O4cZTiGys3RuAcrjvnajFu3aN.wQrV6xFFrYMbSFuJY7GHcEf.geW';
+// Dummy bcrypt cost-12 hash used when username is not found to prevent timing enumeration
+const DUMMY_BCRYPT_HASH =
+  '$2b$12$XJgHZgsVELG7lbTc/cfUX.2JAJxZKH8GNBribMRRTq7B7NOGO4kTO';
+
 const ADMIN_COOKIE_NAME = 'norva_admin_token';
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const MAX_FAILED_LOGIN_ATTEMPTS = 5;
+const ACCOUNT_LOCKOUT_MS = 5 * 60 * 1000; // 5 minutes
+const IP_RATE_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+const MAX_IP_FAILED_ATTEMPTS = 10;
 const DUPLICATE_ORDER_WINDOW_MS = 60 * 1000; // 60-second anti-duplicate window
 const MAX_BACKUPS_RETAINED = 10;
 
@@ -272,8 +285,21 @@ interface BackupDto {
 
 interface AuthenticatedAdmin {
   tokenHash: string;
+  username: string;
   email: string;
   loggedInAt: string;
+}
+
+interface AdminUserRow {
+  username: string;
+  password_hash: string;
+  role: string;
+  is_active: number;
+  failed_attempts: number;
+  locked_until_ms: number;
+  created_at_iso: string;
+  updated_at_iso: string;
+  last_login_at_iso: string | null;
 }
 
 // ============================================================================
@@ -348,8 +374,21 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_order_items_order_number ON order_items(order_number);
 
+  CREATE TABLE IF NOT EXISTS admin_users (
+    username TEXT PRIMARY KEY,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'owner',
+    is_active INTEGER NOT NULL DEFAULT 1,
+    failed_attempts INTEGER NOT NULL DEFAULT 0,
+    locked_until_ms INTEGER NOT NULL DEFAULT 0,
+    created_at_iso TEXT NOT NULL,
+    updated_at_iso TEXT NOT NULL,
+    last_login_at_iso TEXT
+  );
+
   CREATE TABLE IF NOT EXISTS admin_sessions (
     token_hash TEXT PRIMARY KEY,
+    username TEXT NOT NULL DEFAULT '',
     email TEXT NOT NULL,
     logged_in_at TEXT NOT NULL,
     created_at_ms INTEGER NOT NULL,
@@ -442,6 +481,7 @@ ensureColumnExists('orders', 'idempotency_key', 'TEXT');
 ensureColumnExists('orders', 'fingerprint_hash', 'TEXT');
 ensureColumnExists('orders', 'stock_deducted', 'INTEGER NOT NULL DEFAULT 1');
 ensureColumnExists('product_overrides', 'low_stock_threshold', 'INTEGER DEFAULT 10');
+ensureColumnExists('admin_sessions', 'username', "TEXT NOT NULL DEFAULT ''");
 
 db.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_idempotency ON orders(idempotency_key) WHERE idempotency_key IS NOT NULL;
@@ -507,6 +547,54 @@ function seedInitialStoreConfiguration(): void {
     );
   }
 
+  // Provision / sync secure bcrypt-hashed admin account
+  const nowIso = new Date().toISOString();
+  const envAdminUsername = (process.env.ADMIN_USERNAME || '').trim().toLowerCase();
+  const envPasswordHash = (process.env.ADMIN_PASSWORD_HASH || '').trim();
+  const envInitialPassword = process.env.ADMIN_INITIAL_PASSWORD || '';
+  const requireManualActivation = process.env.ADMIN_REQUIRE_ACTIVATION === 'true';
+
+  if (envAdminUsername && /^\$2[aby]\$\d{2}\$.{53}$/.test(envPasswordHash)) {
+    db.prepare(
+      `INSERT INTO admin_users (
+        username, password_hash, role, is_active, failed_attempts, locked_until_ms, created_at_iso, updated_at_iso
+      ) VALUES (?, ?, 'owner', 1, 0, 0, ?, ?)
+      ON CONFLICT(username) DO UPDATE SET
+        password_hash = excluded.password_hash,
+        is_active = 1,
+        updated_at_iso = excluded.updated_at_iso`,
+    ).run(envAdminUsername, envPasswordHash, nowIso, nowIso);
+  } else if (envAdminUsername && envInitialPassword.length >= 6) {
+    const existingEnvAdmin = db
+      .prepare('SELECT username FROM admin_users WHERE username = ?')
+      .get(envAdminUsername);
+    if (!existingEnvAdmin) {
+      const hashed = bcrypt.hashSync(envInitialPassword, BCRYPT_ROUNDS);
+      db.prepare(
+        `INSERT INTO admin_users (
+          username, password_hash, role, is_active, failed_attempts, locked_until_ms, created_at_iso, updated_at_iso
+        ) VALUES (?, ?, 'owner', ?, 0, 0, ?, ?)`,
+      ).run(envAdminUsername, hashed, requireManualActivation ? 0 : 1, nowIso, nowIso);
+    }
+  }
+
+  const adminCountRow = db
+    .prepare('SELECT COUNT(*) AS cnt FROM admin_users')
+    .get() as { cnt: number } | undefined;
+  if (Number(adminCountRow?.cnt ?? 0) === 0) {
+    db.prepare(
+      `INSERT INTO admin_users (
+        username, password_hash, role, is_active, failed_attempts, locked_until_ms, created_at_iso, updated_at_iso
+      ) VALUES (?, ?, 'owner', ?, 0, 0, ?, ?)`,
+    ).run(
+      INITIAL_ADMIN_USERNAME,
+      INITIAL_ADMIN_BCRYPT_HASH,
+      requireManualActivation ? 0 : 1,
+      nowIso,
+      nowIso,
+    );
+  }
+
   checkpointDatabase();
 }
 
@@ -519,10 +607,46 @@ function sha256Hex(value: string): string {
   return crypto.createHash('sha256').update(value, 'utf8').digest('hex');
 }
 
-function safeComparePassword(candidate: string, expected: string): boolean {
+function safeCompareSecret(candidate: string, expected: string): boolean {
+  if (!candidate || !expected) return false;
   const a = Buffer.from(sha256Hex(candidate), 'hex');
   const b = Buffer.from(sha256Hex(expected), 'hex');
   return crypto.timingSafeEqual(a, b);
+}
+
+const ipFailedLogins = new Map<string, { count: number; resetAtMs: number }>();
+
+function getClientIp(req: Request): string {
+  const xff = req.headers['x-forwarded-for'];
+  if (typeof xff === 'string' && xff.trim()) {
+    return xff.split(',')[0].trim();
+  }
+  return req.socket.remoteAddress || 'unknown';
+}
+
+function isIpRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = ipFailedLogins.get(ip);
+  if (!entry) return false;
+  if (now >= entry.resetAtMs) {
+    ipFailedLogins.delete(ip);
+    return false;
+  }
+  return entry.count >= MAX_IP_FAILED_ATTEMPTS;
+}
+
+function recordIpFailedAttempt(ip: string): void {
+  const now = Date.now();
+  const existing = ipFailedLogins.get(ip);
+  if (!existing || now >= existing.resetAtMs) {
+    ipFailedLogins.set(ip, { count: 1, resetAtMs: now + IP_RATE_WINDOW_MS });
+  } else {
+    existing.count += 1;
+  }
+}
+
+function clearIpFailedAttempts(ip: string): void {
+  ipFailedLogins.delete(ip);
 }
 
 function normalizePhoneDigits(phone: string): string {
@@ -589,28 +713,33 @@ function verifyAdminToken(rawToken: string | null): AuthenticatedAdmin | null {
 
   const row = db
     .prepare(
-      `SELECT token_hash, email, logged_in_at, expires_at_ms
-       FROM admin_sessions
-       WHERE token_hash = ?`,
+      `SELECT s.token_hash, s.username, s.email, s.logged_in_at, s.expires_at_ms, u.is_active
+       FROM admin_sessions s
+       LEFT JOIN admin_users u ON u.username = s.username
+       WHERE s.token_hash = ?`,
     )
     .get(tokenHash) as
     | {
         token_hash: string;
+        username: string;
         email: string;
         logged_in_at: string;
         expires_at_ms: number;
+        is_active: number | null;
       }
     | undefined;
 
   if (!row) return null;
-  if (row.expires_at_ms <= now) {
+  if (row.expires_at_ms <= now || row.is_active !== 1) {
     db.prepare('DELETE FROM admin_sessions WHERE token_hash = ?').run(tokenHash);
     return null;
   }
 
+  const resolvedUsername = row.username || row.email;
   return {
     tokenHash: row.token_hash,
-    email: row.email,
+    username: resolvedUsername,
+    email: resolvedUsername,
     loggedInAt: row.logged_in_at,
   };
 }
@@ -1977,60 +2106,311 @@ async function startServer(): Promise<void> {
   });
 
   // --------------------------------------------------------------------------
-  // ADMIN AUTHENTICATION ENDPOINTS
+  // EXPLICITLY BLOCK ALL PUBLIC REGISTRATION ENDPOINTS
   // --------------------------------------------------------------------------
-  app.post('/api/admin/login', (req: Request, res: Response) => {
-    const email = String(req.body?.email ?? '')
-      .trim()
-      .toLowerCase();
-    const password = String(req.body?.password ?? '');
-
-    if (!email || !email.includes('@')) {
-      res.status(400).json({
+  app.all(
+    [
+      '/api/register',
+      '/api/signup',
+      '/api/auth/register',
+      '/api/auth/signup',
+      '/api/admin/register',
+      '/api/admin/signup',
+      '/api/users/register',
+    ],
+    (_req: Request, res: Response) => {
+      res.status(403).json({
         ok: false,
-        error: 'Please enter a valid Gmail or administrator email address.',
+        error: 'Public registration is strictly disabled. Administrator accounts are provisioned privately on the server.',
       });
+    },
+  );
+
+  // --------------------------------------------------------------------------
+  // ADMIN AUTHENTICATION, ACTIVATION & BLANKET ROUTE GUARD
+  // --------------------------------------------------------------------------
+  // Blanket guard: protect EVERY /api/admin/* route except login, logout, and secret-gated activate
+  app.use('/api/admin', (req: Request, res: Response, next: NextFunction) => {
+    if (
+      req.method === 'POST' &&
+      (req.path === '/login' || req.path === '/logout' || req.path === '/activate')
+    ) {
+      next();
       return;
     }
+    requireAdminAuth(req, res, next);
+  });
 
-    if (!safeComparePassword(password, ADMIN_PASSWORD)) {
-      res.status(401).json({
-        ok: false,
-        error: 'Incorrect administrator password.',
+  // Server-side bcrypt login with per-IP rate limiting & per-account brute-force lockout
+  app.post('/api/admin/login', async (req: Request, res: Response) => {
+    try {
+      const clientIp = getClientIp(req);
+      if (isIpRateLimited(clientIp)) {
+        res.status(429).json({
+          ok: false,
+          error: 'Too many failed sign-in attempts from this network. Please wait 10 minutes before retrying.',
+        });
+        return;
+      }
+
+      const rawIdentifier = String(req.body?.username ?? req.body?.email ?? '')
+        .trim()
+        .toLowerCase();
+      const password = String(req.body?.password ?? '');
+
+      if (!rawIdentifier || !password) {
+        res.status(400).json({
+          ok: false,
+          error: 'Please enter both your admin username and password.',
+        });
+        return;
+      }
+
+      const userRow = db
+        .prepare('SELECT * FROM admin_users WHERE LOWER(username) = ?')
+        .get(rawIdentifier) as unknown as AdminUserRow | undefined;
+
+      const now = Date.now();
+      if (userRow && userRow.locked_until_ms > now) {
+        const minsLeft = Math.max(1, Math.ceil((userRow.locked_until_ms - now) / 60000));
+        res.status(429).json({
+          ok: false,
+          error: `Account temporarily locked after repeated failed attempts. Try again in ${minsLeft} minute(s).`,
+        });
+        return;
+      }
+
+      const targetHash = userRow ? userRow.password_hash : DUMMY_BCRYPT_HASH;
+      const passwordValid = await bcrypt.compare(password, targetHash);
+
+      if (!userRow || !passwordValid) {
+        recordIpFailedAttempt(clientIp);
+        if (userRow) {
+          const nextFailures = (userRow.failed_attempts || 0) + 1;
+          const nextLockUntil =
+            nextFailures >= MAX_FAILED_LOGIN_ATTEMPTS ? now + ACCOUNT_LOCKOUT_MS : 0;
+          db.prepare(
+            `UPDATE admin_users
+             SET failed_attempts = ?, locked_until_ms = ?, updated_at_iso = ?
+             WHERE username = ?`,
+          ).run(
+            nextFailures >= MAX_FAILED_LOGIN_ATTEMPTS ? 0 : nextFailures,
+            nextLockUntil,
+            new Date(now).toISOString(),
+            userRow.username,
+          );
+          checkpointDatabase();
+        }
+        res.status(401).json({
+          ok: false,
+          error: 'Invalid administrator username or password.',
+        });
+        return;
+      }
+
+      if (userRow.is_active !== 1) {
+        res.status(403).json({
+          ok: false,
+          error: 'Administrator account is inactive and requires server-side activation.',
+        });
+        return;
+      }
+
+      // Reset failure counters and record login timestamp
+      clearIpFailedAttempts(clientIp);
+      const nowIso = new Date(now).toISOString();
+      db.prepare(
+        `UPDATE admin_users
+         SET failed_attempts = 0, locked_until_ms = 0, last_login_at_iso = ?, updated_at_iso = ?
+         WHERE username = ?`,
+      ).run(nowIso, nowIso, userRow.username);
+
+      db.prepare('DELETE FROM admin_sessions WHERE expires_at_ms <= ?').run(now);
+
+      const rawToken = crypto.randomBytes(32).toString('hex');
+      const tokenHash = sha256Hex(rawToken);
+      const loggedInAt = new Date(now).toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
       });
-      return;
-    }
 
-    const now = Date.now();
-    db.prepare('DELETE FROM admin_sessions WHERE expires_at_ms <= ?').run(now);
-
-    const rawToken = crypto.randomBytes(32).toString('hex');
-    const tokenHash = sha256Hex(rawToken);
-    const loggedInAt = new Date().toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-
-    db.prepare(
-      `INSERT INTO admin_sessions (token_hash, email, logged_in_at, created_at_ms, expires_at_ms)
-       VALUES (?, ?, ?, ?, ?)`,
-    ).run(tokenHash, email, loggedInAt, now, now + SESSION_TTL_MS);
-
-    checkpointDatabase();
-
-    res.setHeader(
-      'Set-Cookie',
-      `${ADMIN_COOKIE_NAME}=${encodeURIComponent(rawToken)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`,
-    );
-
-    res.json({
-      ok: true,
-      token: rawToken,
-      session: {
-        email,
+      db.prepare(
+        `INSERT INTO admin_sessions (token_hash, username, email, logged_in_at, created_at_ms, expires_at_ms)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      ).run(
+        tokenHash,
+        userRow.username,
+        userRow.username,
         loggedInAt,
-      },
-    });
+        now,
+        now + SESSION_TTL_MS,
+      );
+
+      checkpointDatabase();
+
+      const isHttps =
+        req.secure ||
+        req.headers['x-forwarded-proto'] === 'https' ||
+        process.env.NODE_ENV === 'production';
+      const cookiePolicy = isHttps ? 'Secure; SameSite=None' : 'SameSite=Lax';
+      res.setHeader(
+        'Set-Cookie',
+        `${ADMIN_COOKIE_NAME}=${encodeURIComponent(rawToken)}; Path=/; HttpOnly; ${cookiePolicy}; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`,
+      );
+
+      res.json({
+        ok: true,
+        token: rawToken,
+        session: {
+          username: userRow.username,
+          email: userRow.username,
+          loggedInAt,
+        },
+      });
+    } catch (err) {
+      console.error('Admin login error:', err);
+      res.status(500).json({
+        ok: false,
+        error: 'Authentication error occurred. Please retry.',
+      });
+    }
+  });
+
+  // One-time / Secret-Gated Admin Account Activation & Credential Provisioning
+  app.post('/api/admin/activate', async (req: Request, res: Response) => {
+    try {
+      const configuredSetupToken = (process.env.ADMIN_SETUP_TOKEN || '').trim();
+      if (!configuredSetupToken || configuredSetupToken.length < 12) {
+        res.status(403).json({
+          ok: false,
+          error:
+            'Activation endpoint is locked. Configure ADMIN_SETUP_TOKEN (at least 12 characters) in server Secrets to run remote activation.',
+        });
+        return;
+      }
+
+      const providedSetupToken = String(req.headers['x-setup-token'] ?? '').trim();
+      if (!safeCompareSecret(providedSetupToken, configuredSetupToken)) {
+        res.status(401).json({
+          ok: false,
+          error: 'Invalid setup token.',
+        });
+        return;
+      }
+
+      const username = String(req.body?.username ?? '')
+        .trim()
+        .toLowerCase();
+      const password = String(req.body?.password ?? '');
+
+      if (!username || username.length < 3 || !/^[a-z0-9._@-]+$/.test(username)) {
+        res.status(400).json({
+          ok: false,
+          error: 'Valid admin username (min 3 characters) is required.',
+        });
+        return;
+      }
+      if (password.length < 8) {
+        res.status(400).json({
+          ok: false,
+          error: 'Admin password must be at least 8 characters.',
+        });
+        return;
+      }
+
+      const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+      const nowIso = new Date().toISOString();
+
+      db.prepare(
+        `INSERT INTO admin_users (
+          username, password_hash, role, is_active, failed_attempts, locked_until_ms, created_at_iso, updated_at_iso
+        ) VALUES (?, ?, 'owner', 1, 0, 0, ?, ?)
+        ON CONFLICT(username) DO UPDATE SET
+          password_hash = excluded.password_hash,
+          is_active = 1,
+          failed_attempts = 0,
+          locked_until_ms = 0,
+          updated_at_iso = excluded.updated_at_iso`,
+      ).run(username, passwordHash, nowIso, nowIso);
+
+      // Invalidate any older sessions for this username on activation/reset
+      db.prepare('DELETE FROM admin_sessions WHERE username = ?').run(username);
+      checkpointDatabase();
+
+      res.json({
+        ok: true,
+        username,
+        message: `Admin account '${username}' activated with bcrypt (cost ${BCRYPT_ROUNDS}) hashing.`,
+      });
+    } catch (err) {
+      console.error('Admin activation error:', err);
+      res.status(500).json({ ok: false, error: 'Failed to activate admin account.' });
+    }
+  });
+
+  // Authenticated Admin Password Rotation (verifies current bcrypt hash & revokes other sessions)
+  app.post('/api/admin/change-password', requireAdminAuth, async (req: Request, res: Response) => {
+    try {
+      const session = (req as Request & { adminSession: AuthenticatedAdmin }).adminSession;
+      const currentPassword = String(req.body?.currentPassword ?? '');
+      const newPassword = String(req.body?.newPassword ?? '');
+
+      if (!currentPassword || !newPassword) {
+        res.status(400).json({
+          ok: false,
+          error: 'Both current password and new password are required.',
+        });
+        return;
+      }
+      if (newPassword.length < 8) {
+        res.status(400).json({
+          ok: false,
+          error: 'New password must be at least 8 characters long.',
+        });
+        return;
+      }
+
+      const userRow = db
+        .prepare('SELECT * FROM admin_users WHERE username = ?')
+        .get(session.username) as unknown as AdminUserRow | undefined;
+
+      if (!userRow) {
+        res.status(404).json({ ok: false, error: 'Admin account not found.' });
+        return;
+      }
+
+      const matchesCurrent = await bcrypt.compare(currentPassword, userRow.password_hash);
+      if (!matchesCurrent) {
+        res.status(401).json({
+          ok: false,
+          error: 'Current password is incorrect.',
+        });
+        return;
+      }
+
+      const nextHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+      const nowIso = new Date().toISOString();
+      db.prepare(
+        `UPDATE admin_users
+         SET password_hash = ?, failed_attempts = 0, locked_until_ms = 0, updated_at_iso = ?
+         WHERE username = ?`,
+      ).run(nextHash, nowIso, userRow.username);
+
+      // Revoke all other sessions except the active session
+      db.prepare('DELETE FROM admin_sessions WHERE username = ? AND token_hash != ?').run(
+        userRow.username,
+        session.tokenHash,
+      );
+      checkpointDatabase();
+
+      res.json({
+        ok: true,
+        message: 'Administrator password updated with bcrypt hashing.',
+      });
+    } catch (err) {
+      console.error('Admin password change error:', err);
+      res.status(500).json({ ok: false, error: 'Failed to update password.' });
+    }
   });
 
   app.get('/api/admin/session', requireAdminAuth, (req: Request, res: Response) => {
@@ -2038,7 +2418,8 @@ async function startServer(): Promise<void> {
     res.json({
       ok: true,
       session: {
-        email: session.email,
+        username: session.username,
+        email: session.username,
         loggedInAt: session.loggedInAt,
       },
       unseenCount: getUnseenOrderCount(),
@@ -2051,9 +2432,14 @@ async function startServer(): Promise<void> {
       db.prepare('DELETE FROM admin_sessions WHERE token_hash = ?').run(sha256Hex(rawToken));
       checkpointDatabase();
     }
+    const isHttps =
+      req.secure ||
+      req.headers['x-forwarded-proto'] === 'https' ||
+      process.env.NODE_ENV === 'production';
+    const cookiePolicy = isHttps ? 'Secure; SameSite=None' : 'SameSite=Lax';
     res.setHeader(
       'Set-Cookie',
-      `${ADMIN_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`,
+      `${ADMIN_COOKIE_NAME}=; Path=/; HttpOnly; ${cookiePolicy}; Max-Age=0`,
     );
     res.json({ ok: true });
   });

@@ -152,7 +152,8 @@ export interface ConciergeInquiry {
 }
 
 export interface AdminSession {
-  email: string;
+  username: string;
+  email?: string;
   loggedInAt: string;
 }
 
@@ -254,7 +255,11 @@ interface StoreContextValue {
   addSubscriber: (email: string) => void;
 
   // Authenticated Admin Methods
-  loginAdmin: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+  loginAdmin: (username: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+  changeAdminPassword: (
+    currentPassword: string,
+    newPassword: string,
+  ) => Promise<{ ok: boolean; error?: string }>;
   logoutAdmin: () => Promise<void>;
   refreshAdminOrders: () => Promise<void>;
   updateOrderStatus: (orderNumber: string, status: OrderStatus) => Promise<boolean>;
@@ -413,6 +418,60 @@ function triggerBlobDownload(blob: Blob, filename: string): void {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/**
+ * Resilient JSON POST helper that includes cookies (required for cross-origin preview/public proxy)
+ * and automatically re-sends the POST body if a 60s auth-bridge 302 redirect or server warmup
+ * temporarily converts POST -> GET or returns an HTML warmup page.
+ */
+async function postJsonResilient<T = Record<string, any>>(
+  url: string,
+  payload: unknown,
+  signal?: AbortSignal,
+  maxRetries = 2,
+): Promise<{ res: Response; data: T | null }> {
+  const bodyStr = JSON.stringify(payload);
+  let lastRes: Response | null = null;
+  let lastData: T | null = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const res = await fetch(url, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: bodyStr,
+      signal,
+    });
+
+    const contentType = (res.headers.get('content-type') || '').toLowerCase();
+    const isJson = contentType.includes('application/json');
+    const data = isJson ? ((await res.json().catch(() => null)) as T | null) : null;
+
+    lastRes = res;
+    lastData = data;
+
+    const convertedByRedirect =
+      res.redirected && (!res.ok || !isJson || (data as Record<string, unknown> | null)?.retryPost === true);
+    const transientGatewayOrWarmup =
+      res.status === 405 ||
+      res.status === 502 ||
+      res.status === 503 ||
+      res.status === 504 ||
+      (!isJson && res.status === 200);
+
+    if ((convertedByRedirect || transientGatewayOrWarmup) && attempt < maxRetries) {
+      await new Promise((r) => window.setTimeout(r, 250 * (attempt + 1)));
+      continue;
+    }
+
+    return { res, data };
+  }
+
+  return { res: lastRes!, data: lastData };
+}
+
 const StoreContext = createContext<StoreContextValue | null>(null);
 
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -539,7 +598,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // 1. Load live storefront catalog overrides, shipping rates, reviews & persistent wishlist
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/storefront/bootstrap')
+    fetch('/api/storefront/bootstrap', { credentials: 'include' })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (cancelled || !data?.ok) return;
@@ -555,7 +614,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       })
       .catch(() => {});
 
-    fetch(`/api/wishlist/${encodeURIComponent(clientIdRef.current)}`)
+    fetch(`/api/wishlist/${encodeURIComponent(clientIdRef.current)}`, {
+      credentials: 'include',
+    })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (!cancelled && data?.ok && Array.isArray(data.wishlist) && data.wishlist.length > 0) {
@@ -576,13 +637,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return;
     }
     try {
-      const res = await fetch('/api/orders/lookup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tokens: buyerOrderTokens }),
+      const { res, data } = await postJsonResilient('/api/orders/lookup', {
+        tokens: buyerOrderTokens,
       });
       if (!res.ok) return;
-      const data = await res.json();
       if (data?.ok && Array.isArray(data.orders)) {
         setOrders(
           sortOrdersNewestFirst(
@@ -933,12 +991,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       error?: string;
     }> => {
       try {
-        const res = await fetch('/api/coupons/validate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code, subtotal }),
+        const { res, data } = await postJsonResilient('/api/coupons/validate', {
+          code,
+          subtotal,
         });
-        const data = await res.json().catch(() => null);
         if (!res.ok || !data?.ok) {
           return {
             ok: false,
@@ -966,12 +1022,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       phone: string,
     ): Promise<{ ok: boolean; order?: PlacedOrder; error?: string }> => {
       try {
-        const res = await fetch('/api/orders/track', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ orderNumber, phone }),
+        const { res, data } = await postJsonResilient('/api/orders/track', {
+          orderNumber,
+          phone,
         });
-        const data = await res.json().catch(() => null);
         if (!res.ok || !data?.ok || !data.order) {
           return {
             ok: false,
@@ -1118,19 +1172,31 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       },
     ): Promise<PlacedOrder> => {
       const controller = new AbortController();
-      const timeoutId = window.setTimeout(() => controller.abort(), 15000);
+      const timeoutId = window.setTimeout(() => controller.abort(), 20000);
+
+      // Strip any oversized inline base64 data URLs so POST payload stays < 2KB
+      const compactPayload = {
+        ...orderInput,
+        items: orderInput.items.map((item) => ({
+          ...item,
+          image:
+            typeof item.image === 'string' && item.image.length <= 2048 ? item.image : '',
+        })),
+      };
 
       try {
-        const res = await fetch('/api/orders', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(orderInput),
-          signal: controller.signal,
-        });
+        const { res, data } = await postJsonResilient(
+          '/api/orders',
+          compactPayload,
+          controller.signal,
+          2,
+        );
 
-        const data = await res.json().catch(() => null);
         if (!res.ok || !data?.ok || !data.order) {
-          throw new Error(data?.error || 'Could not place your order. Please try again.');
+          throw new Error(
+            data?.error ||
+              `Order submission failed (HTTP ${res.status}). Please check your details and tap Confirm Order again.`,
+          );
         }
 
         const savedOrder: PlacedOrder = {
@@ -1168,7 +1234,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') {
           throw new Error(
-            'Order request timed out. Please check your connection or retry — duplicate protection is active.',
+            'Order request timed out. Please check your connection and tap Confirm Order again — duplicate protection is active.',
           );
         }
         throw err;
@@ -1306,20 +1372,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // SERVER-VERIFIED ADMIN AUTHENTICATION & MANAGEMENT
   // =========================================================================
   const loginAdmin = useCallback(
-    async (email: string, password: string): Promise<{ ok: boolean; error?: string }> => {
+    async (username: string, password: string): Promise<{ ok: boolean; error?: string }> => {
       try {
         const res = await fetch('/api/admin/login', {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password }),
+          body: JSON.stringify({ username, password }),
         });
 
         const data = await res.json().catch(() => null);
         if (!res.ok || !data?.ok || !data.session) {
           return {
             ok: false,
-            error: data?.error || 'Authentication failed. Check your password.',
+            error: data?.error || 'Authentication failed. Check your username and password.',
           };
         }
 
@@ -1329,7 +1395,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setAdminSession(data.session);
 
         await fetchAdminDashboardData(tok);
-        showToast(`Signed in to NORVA Admin as ${data.session.email}`);
+        showToast(
+          `Signed in to NORVA Admin as ${data.session.username || data.session.email}`,
+        );
         return { ok: true };
       } catch {
         return {
@@ -1339,6 +1407,37 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     },
     [fetchAdminDashboardData, showToast],
+  );
+
+  const changeAdminPassword = useCallback(
+    async (
+      currentPassword: string,
+      newPassword: string,
+    ): Promise<{ ok: boolean; error?: string }> => {
+      try {
+        const res = await fetch('/api/admin/change-password', {
+          method: 'POST',
+          credentials: 'include',
+          headers: buildAdminHeaders(),
+          body: JSON.stringify({ currentPassword, newPassword }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.ok) {
+          return {
+            ok: false,
+            error: data?.error || 'Unable to update administrator password.',
+          };
+        }
+        showToast('Administrator password updated securely');
+        return { ok: true };
+      } catch {
+        return {
+          ok: false,
+          error: 'Network error while updating administrator password.',
+        };
+      }
+    },
+    [buildAdminHeaders, showToast],
   );
 
   const logoutAdmin = useCallback(async () => {
@@ -1776,6 +1875,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       toggleInquiryResolved,
       addSubscriber,
       loginAdmin,
+      changeAdminPassword,
       logoutAdmin,
       refreshAdminOrders,
       updateOrderStatus,
@@ -1848,6 +1948,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       toggleInquiryResolved,
       addSubscriber,
       loginAdmin,
+      changeAdminPassword,
       logoutAdmin,
       refreshAdminOrders,
       updateOrderStatus,
