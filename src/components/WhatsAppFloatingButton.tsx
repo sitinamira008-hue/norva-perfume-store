@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { ChevronUp, Minus, Plus, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { formatPKR } from '../data/products';
-import { CartItem, useStore } from '../context/StoreContext';
+import { CartItem, PlacedOrder, useStore } from '../context/StoreContext';
 
 export const WHATSAPP_DISPLAY = '0301-2697458';
 export const WHATSAPP_WA_NUMBER = '923012697458';
@@ -21,6 +21,55 @@ export const WhatsAppIcon: React.FC<{ className?: string }> = ({ className = 'w-
 
 export function buildWhatsAppUrl(message: string): string {
   return `https://wa.me/${WHATSAPP_WA_NUMBER}?text=${encodeURIComponent(message)}`;
+}
+
+export function buildOrderConfirmationWhatsAppUrl(order: PlacedOrder): string {
+  const itemLines = order.items.map(
+    (item, idx) =>
+      `${idx + 1}. *${item.name}* (${item.sizeLabel}) × ${item.quantity} — ${formatPKR(
+        item.unitPrice * item.quantity,
+      )}`,
+  );
+
+  const lines: string[] = [
+    'Assalam o Alaikum NORVA!',
+    `Please confirm my order *${order.orderNumber}*:`,
+    '',
+    ...itemLines,
+    '',
+    `Subtotal: ${formatPKR(order.subtotal)}`,
+  ];
+
+  if (order.discountAmount > 0) {
+    lines.push(
+      `Discount${order.couponCode ? ` (${order.couponCode})` : ''}: -${formatPKR(
+        order.discountAmount,
+      )}`,
+    );
+  }
+
+  lines.push(
+    `Shipping (${order.customer.city}): ${
+      order.shippingCost === 0 ? 'Complimentary' : formatPKR(order.shippingCost)
+    }`,
+    `*Total Payable:* ${formatPKR(order.total)}`,
+    `Payment Method: ${
+      order.paymentMethod === 'cod' ? 'Cash on Delivery (COD)' : 'Bank Transfer / IBFT Invoice'
+    }`,
+    '',
+    '*Delivery Details:*',
+    `Name: ${order.customer.fullName}`,
+    `Phone: ${order.customer.phone}`,
+    `Address: ${order.customer.address}, ${order.customer.city}${
+      order.customer.postalCode ? ` ${order.customer.postalCode}` : ''
+    }, ${order.customer.country}`,
+  );
+
+  if (order.giftNote) {
+    lines.push(`Gift Note: "${order.giftNote}"`);
+  }
+
+  return buildWhatsAppUrl(lines.join('\n'));
 }
 
 export function buildCartWhatsAppUrl(cart: CartItem[], subtotal: number): string {

@@ -152,12 +152,22 @@ export const MagneticWrap: React.FC<{
 };
 
 export const ProductCard: React.FC<{
-  product: CatalogProduct & { inStock?: boolean };
+  product: CatalogProduct & {
+    inStock?: boolean;
+    stockUnits?: number;
+    lowStockThreshold?: number;
+    isLowStock?: boolean;
+  };
   index?: number;
 }> = React.memo(({ product, index = 0 }) => {
   const { addToCart, toggleWishlist, isInWishlist, openQuickView } = useStore();
   const wished = isInWishlist(product.id);
-  const inStock = product.inStock !== false;
+  const inStock = product.inStock !== false && (product.stockUnits ?? 48) > 0;
+  const isLowStock =
+    inStock &&
+    (product.isLowStock ||
+      (product.stockUnits !== undefined &&
+        product.stockUnits <= (product.lowStockThreshold ?? 10)));
   const defaultSizeIdx = 0;
   const displayOption = product.sizes[defaultSizeIdx];
   const aura =
@@ -195,8 +205,12 @@ export const ProductCard: React.FC<{
 
         {/* Subtle single text label top-left (Zero pill spam) */}
         {!inStock ? (
-          <span className="pointer-events-none absolute top-2.5 left-2.5 sm:top-3.5 sm:left-4 text-[9.5px] sm:text-[11px] font-medium tracking-[0.1em] sm:tracking-[0.14em] uppercase text-red-300">
+          <span className="pointer-events-none absolute top-2.5 left-2.5 sm:top-3.5 sm:left-4 text-[9.5px] sm:text-[11px] font-medium tracking-[0.1em] sm:tracking-[0.14em] uppercase text-red-300 drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)]">
             Out of Stock
+          </span>
+        ) : isLowStock ? (
+          <span className="pointer-events-none absolute top-2.5 left-2.5 sm:top-3.5 sm:left-4 text-[9.5px] sm:text-[11px] font-medium tracking-[0.1em] sm:tracking-[0.14em] uppercase text-amber-300 drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)]">
+            Only {product.stockUnits} Left
           </span>
         ) : (
           (product.isBestSeller || product.isNewArrival) && (

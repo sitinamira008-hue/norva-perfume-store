@@ -14,7 +14,7 @@ const COLLECTION_LINKS = [
 ];
 
 export const Navbar: React.FC = () => {
-  const { cartCount, wishlist, openCart, openSearch } = useStore();
+  const { cartCount, wishlist, openCart, openSearch, adminSession, unseenOrderCount } = useStore();
   const [collectionsOpen, setCollectionsOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
@@ -118,6 +118,17 @@ export const Navbar: React.FC = () => {
           </NavLink>
 
           <NavLink
+            to="/track-order"
+            className={({ isActive }) =>
+              `hover:text-white transition-colors whitespace-nowrap shrink-0 ${
+                isActive ? 'text-white underline underline-offset-8 decoration-[#d6be96]' : ''
+              }`
+            }
+          >
+            Track Order
+          </NavLink>
+
+          <NavLink
             to="/contact"
             className={({ isActive }) =>
               `hover:text-white transition-colors whitespace-nowrap shrink-0 ${
@@ -142,9 +153,14 @@ export const Navbar: React.FC = () => {
 
           <Link
             to="/admin"
-            className="hidden sm:inline-block text-xs font-medium text-white/60 hover:text-[#d6be96] transition-colors whitespace-nowrap shrink-0 px-1.5"
+            className="hidden sm:inline-flex items-center gap-1.5 text-xs font-medium text-white/60 hover:text-[#d6be96] transition-colors whitespace-nowrap shrink-0 px-1.5"
           >
-            Admin
+            <span>Admin</span>
+            {adminSession && unseenOrderCount > 0 && (
+              <span className="font-mono-tabular text-[10px] px-1.5 py-0.5 rounded bg-[#36d67e] text-[#050508] font-bold">
+                {unseenOrderCount}
+              </span>
+            )}
           </Link>
 
           <Link
@@ -223,6 +239,13 @@ export const Navbar: React.FC = () => {
                   <span className="text-white/35 text-xs">→</span>
                 </Link>
                 <Link
+                  to="/track-order"
+                  className="min-h-[44px] flex items-center justify-between hover:text-[#d6be96] transition-colors"
+                >
+                  <span>Track Your Order</span>
+                  <span className="text-white/35 text-xs">NV-#</span>
+                </Link>
+                <Link
                   to="/contact"
                   className="min-h-[44px] flex items-center justify-between hover:text-[#d6be96] transition-colors"
                 >
@@ -241,7 +264,13 @@ export const Navbar: React.FC = () => {
                   className="min-h-[44px] flex items-center justify-between text-[#d6be96]"
                 >
                   <span>Admin Dashboard</span>
-                  <span className="text-xs">→</span>
+                  {adminSession && unseenOrderCount > 0 ? (
+                    <span className="font-mono-tabular text-[11px] px-2 py-0.5 rounded bg-[#36d67e] text-[#050508] font-bold">
+                      {unseenOrderCount} New
+                    </span>
+                  ) : (
+                    <span className="text-xs">→</span>
+                  )}
                 </Link>
               </nav>
 
@@ -379,6 +408,11 @@ export const Footer: React.FC = () => {
               <li>
                 <Link to="/shop" className="hover:text-white transition-colors">
                   Shop All Fragrances
+                </Link>
+              </li>
+              <li>
+                <Link to="/track-order" className="hover:text-white transition-colors">
+                  Track Your Order
                 </Link>
               </li>
               <li>

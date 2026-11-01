@@ -31,6 +31,9 @@ const CheckoutPage = lazy(() =>
 const AccountPage = lazy(() =>
   import('./pages/CheckoutAndAccountPages').then((m) => ({ default: m.AccountPage })),
 );
+const TrackOrderPage = lazy(() =>
+  import('./pages/CheckoutAndAccountPages').then((m) => ({ default: m.TrackOrderPage })),
+);
 const AdminDashboardPage = lazy(() =>
   import('./pages/AdminDashboardPage').then((m) => ({ default: m.AdminDashboardPage })),
 );
@@ -87,6 +90,7 @@ const AnimatedRoutes: React.FC = () => {
           <Route path="/product/:slug" element={<ProductDetailPage />} />
           <Route path="/contact" element={<ContactPage />} />
           <Route path="/checkout" element={<CheckoutPage />} />
+          <Route path="/track-order" element={<TrackOrderPage />} />
           <Route path="/account" element={<AccountPage />} />
           <Route path="/admin" element={<AdminDashboardPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

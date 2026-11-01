@@ -252,9 +252,14 @@ export const CartDrawer: React.FC = () => {
 };
 
 export const QuickViewModal: React.FC = () => {
-  const { quickViewProduct, closeQuickView, addToCart } = useStore();
+  const { products, quickViewProduct, closeQuickView, addToCart } = useStore();
   const [sizeIdx, setSizeIdx] = useState(0);
   const [previewMode, setPreviewMode] = useState<'photo' | '3d'>('photo');
+
+  const liveQuickProduct = useMemo(() => {
+    if (!quickViewProduct) return null;
+    return products.find((p) => p.id === quickViewProduct.id) ?? null;
+  }, [products, quickViewProduct]);
 
   useEffect(() => {
     if (quickViewProduct) {
@@ -275,6 +280,8 @@ export const QuickViewModal: React.FC = () => {
     ? PERFUME_CARD_SHADOW_BY_PRESET[quickViewProduct.bottle3D.preset] ??
       PERFUME_CARD_SHADOW_BY_PRESET.amber
     : PERFUME_CARD_SHADOW_BY_PRESET.amber;
+
+  const isAvailable = liveQuickProduct ? liveQuickProduct.inStock && liveQuickProduct.stockUnits > 0 : true;
 
   return (
     <AnimatePresence>
@@ -393,31 +400,43 @@ export const QuickViewModal: React.FC = () => {
                 </div>
 
                 {/* Size display */}
-                <div className="mt-5">
-                  <span className="block text-[11px] text-white/50 mb-2">Flacon Volume</span>
-                  <div className="flex flex-wrap gap-2">
-                    {quickViewProduct.sizes.map((opt, idx) => (
-                      <button
-                        key={opt.sku}
-                        type="button"
-                        onClick={() => setSizeIdx(idx)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                          idx === sizeIdx
-                            ? 'bg-white/12 text-white border-[#d6be96]'
-                            : 'bg-[#050508] text-white/60 border-white/10 hover:text-white'
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
+                <div className="mt-5 flex items-end justify-between gap-3">
+                  <div>
+                    <span className="block text-[11px] text-white/50 mb-2">Flacon Volume</span>
+                    <div className="flex flex-wrap gap-2">
+                      {(liveQuickProduct ?? quickViewProduct).sizes.map((opt, idx) => (
+                        <button
+                          key={opt.sku}
+                          type="button"
+                          onClick={() => setSizeIdx(idx)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                            idx === sizeIdx
+                              ? 'bg-white/12 text-white border-[#d6be96]'
+                              : 'bg-[#050508] text-white/60 border-white/10 hover:text-white'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
+                  {liveQuickProduct?.isLowStock && isAvailable && (
+                    <span className="text-[11px] text-amber-300 font-mono-tabular">
+                      Only {liveQuickProduct.stockUnits} left
+                    </span>
+                  )}
                 </div>
               </div>
 
               <div className="relative z-[1] pt-4 border-t border-white/[0.08] space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="font-mono-tabular text-xl font-medium text-white">
-                    {formatPKR((quickViewProduct.sizes[sizeIdx] ?? quickViewProduct.sizes[0]).price)}
+                    {formatPKR(
+                      (
+                        (liveQuickProduct ?? quickViewProduct).sizes[sizeIdx] ??
+                        (liveQuickProduct ?? quickViewProduct).sizes[0]
+                      ).price,
+                    )}
                   </span>
                   <Link
                     to={`/product/${quickViewProduct.slug}`}
@@ -430,14 +449,21 @@ export const QuickViewModal: React.FC = () => {
 
                 <button
                   type="button"
+                  disabled={!isAvailable}
                   onClick={() => {
-                    addToCart(quickViewProduct, sizeIdx, 1, true);
+                    addToCart(liveQuickProduct ?? quickViewProduct, sizeIdx, 1, true);
                     closeQuickView();
                   }}
-                  className="w-full h-11 rounded-lg bg-[#f2e6d5] hover:bg-[#d6be96] text-[#050508] text-xs font-semibold transition-colors cursor-pointer"
+                  className="w-full h-11 rounded-lg bg-[#f2e6d5] hover:bg-[#d6be96] disabled:opacity-45 text-[#050508] text-xs font-semibold transition-colors cursor-pointer"
                 >
-                  Add to Shopping Bag —{' '}
-                  {formatPKR((quickViewProduct.sizes[sizeIdx] ?? quickViewProduct.sizes[0]).price)}
+                  {isAvailable
+                    ? `Add to Shopping Bag — ${formatPKR(
+                        (
+                          (liveQuickProduct ?? quickViewProduct).sizes[sizeIdx] ??
+                          (liveQuickProduct ?? quickViewProduct).sizes[0]
+                        ).price,
+                      )}`
+                    : 'Currently Out of Stock'}
                 </button>
               </div>
             </div>

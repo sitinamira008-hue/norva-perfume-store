@@ -6,6 +6,7 @@ import {
   Check,
   Heart,
   Image as ImageIcon,
+  Loader2,
   Minus,
   Plus,
   ShieldCheck,
@@ -60,9 +61,13 @@ export const ProductDetailPage: React.FC = () => {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewAuthor, setReviewAuthor] = useState('');
   const [reviewLocation, setReviewLocation] = useState('');
+  const [reviewOrderNumber, setReviewOrderNumber] = useState('');
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewTitle, setReviewTitle] = useState('');
   const [reviewComment, setReviewComment] = useState('');
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [reviewSuccess, setReviewSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     if (!product) return;
@@ -119,26 +124,45 @@ export const ProductDetailPage: React.FC = () => {
   };
 
   const handleBuyNow = () => {
+    if (!product.inStock || product.stockUnits <= 0) return;
     addToCart(product, sizeIdx, quantity, false);
     navigate('/checkout');
   };
 
-  const handleSubmitReview = (e: React.FormEvent) => {
+  const handleSubmitReview = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!reviewAuthor.trim() || !reviewTitle.trim() || !reviewComment.trim()) return;
-    addProductReview(product.id, {
+    if (isSubmittingReview) return;
+    if (!reviewAuthor.trim() || !reviewTitle.trim() || !reviewComment.trim()) {
+      setReviewError('Please complete your name, review headline, and comment.');
+      return;
+    }
+    setIsSubmittingReview(true);
+    setReviewError(null);
+    setReviewSuccess(null);
+
+    const res = await addProductReview(product.id, {
       author: reviewAuthor.trim(),
-      location: reviewLocation.trim() || 'Verified Buyer',
+      location: reviewLocation.trim() || 'Pakistan',
+      orderNumber: reviewOrderNumber.trim() || undefined,
       rating: reviewRating,
       title: reviewTitle.trim(),
       comment: reviewComment.trim(),
     });
+
+    setIsSubmittingReview(false);
+    if (!res.ok) {
+      setReviewError(res.error || 'Could not publish review. Please try again.');
+      return;
+    }
+
     setReviewAuthor('');
     setReviewLocation('');
+    setReviewOrderNumber('');
     setReviewTitle('');
     setReviewComment('');
     setReviewRating(5);
     setReviewOpen(false);
+    setReviewSuccess('Thank you — your review is now live on this fragrance page.');
   };
 
   const stagePaused = isCartOpen || isSearchOpen || Boolean(quickViewProduct);
@@ -393,6 +417,24 @@ export const ProductDetailPage: React.FC = () => {
             </div>
           </div>
 
+          {/* Live Stock & Low-Stock Status Line */}
+          <div className="flex items-center justify-between text-xs pt-1">
+            {!product.inStock || product.stockUnits <= 0 ? (
+              <span className="text-red-300 font-medium">
+                Currently Out of Stock — Next batch in maceration
+              </span>
+            ) : product.isLowStock ? (
+              <span className="text-amber-300 font-medium">
+                Low Stock Alert · Only {product.stockUnits} flacon
+                {product.stockUnits === 1 ? '' : 's'} remaining
+              </span>
+            ) : (
+              <span className="text-[#36d67e] font-medium">
+                In Stock · Ready for insured dispatch ({product.stockUnits} available)
+              </span>
+            )}
+          </div>
+
           {/* Quantity + Add to Cart + Buy Now */}
           <div className="space-y-2.5 sm:space-y-3 pt-1">
             <div className="flex items-center gap-2.5 sm:gap-3">
@@ -400,9 +442,10 @@ export const ProductDetailPage: React.FC = () => {
               <div className="h-12 px-1 sm:px-2 rounded-lg bg-[#0b0b11] border border-white/15 flex items-center gap-1 sm:gap-3 shrink-0">
                 <button
                   type="button"
+                  disabled={!product.inStock}
                   onClick={() => setQuantity((q) => Math.max(1, q - 1))}
                   aria-label="Decrease quantity"
-                  className="w-9 h-9 flex items-center justify-center text-white/65 hover:text-white cursor-pointer"
+                  className="w-9 h-9 flex items-center justify-center text-white/65 hover:text-white disabled:opacity-40 cursor-pointer"
                 >
                   <Minus className="w-3.5 h-3.5" />
                 </button>
@@ -411,9 +454,10 @@ export const ProductDetailPage: React.FC = () => {
                 </span>
                 <button
                   type="button"
-                  onClick={() => setQuantity((q) => q + 1)}
+                  disabled={!product.inStock || quantity >= product.stockUnits}
+                  onClick={() => setQuantity((q) => Math.min(product.stockUnits, q + 1))}
                   aria-label="Increase quantity"
-                  className="w-9 h-9 flex items-center justify-center text-white/65 hover:text-white cursor-pointer"
+                  className="w-9 h-9 flex items-center justify-center text-white/65 hover:text-white disabled:opacity-40 cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5" />
                 </button>
@@ -422,21 +466,25 @@ export const ProductDetailPage: React.FC = () => {
               {/* Add to Bag */}
               <button
                 type="button"
+                disabled={!product.inStock}
                 onClick={() => addToCart(product, sizeIdx, quantity, true)}
-                className="flex-1 h-12 px-4 sm:px-6 rounded-lg bg-[#f2e6d5] hover:bg-[#d6be96] text-[#050508] text-xs font-semibold uppercase tracking-[0.11em] sm:tracking-[0.14em] flex items-center justify-center gap-2 transition-colors cursor-pointer whitespace-nowrap"
+                className="flex-1 h-12 px-4 sm:px-6 rounded-lg bg-[#f2e6d5] hover:bg-[#d6be96] disabled:bg-white/15 disabled:text-white/45 text-[#050508] text-xs font-semibold uppercase tracking-[0.11em] sm:tracking-[0.14em] flex items-center justify-center gap-2 transition-colors cursor-pointer whitespace-nowrap"
               >
                 <ShoppingBag className="w-4 h-4 shrink-0" />
-                <span>Add to Bag</span>
+                <span>{product.inStock ? 'Add to Bag' : 'Out of Stock'}</span>
               </button>
             </div>
 
             {/* Express Buy Now */}
             <button
               type="button"
+              disabled={!product.inStock}
               onClick={handleBuyNow}
-              className="w-full h-12 px-4 sm:px-6 rounded-lg bg-[#101018] hover:bg-[#d6be96] text-white hover:text-[#050508] border border-[#d6be96]/40 text-[11.5px] sm:text-xs font-semibold uppercase tracking-[0.11em] sm:tracking-[0.14em] transition-colors cursor-pointer whitespace-nowrap"
+              className="w-full h-12 px-4 sm:px-6 rounded-lg bg-[#101018] hover:bg-[#d6be96] disabled:opacity-40 text-white hover:text-[#050508] border border-[#d6be96]/40 text-[11.5px] sm:text-xs font-semibold uppercase tracking-[0.11em] sm:tracking-[0.14em] transition-colors cursor-pointer whitespace-nowrap"
             >
-              Buy Now · {formatPKR(selectedSize.price * quantity)}
+              {product.inStock
+                ? `Buy Now · ${formatPKR(selectedSize.price * quantity)}`
+                : 'Unavailable for Immediate Dispatch'}
             </button>
 
             {/* Direct WhatsApp Order */}
@@ -603,6 +651,12 @@ export const ProductDetailPage: React.FC = () => {
             </button>
           </div>
 
+          {reviewSuccess && (
+            <div className="p-3.5 rounded-xl bg-[#36d67e]/10 border border-[#36d67e]/35 text-xs text-[#36d67e] max-w-2xl">
+              {reviewSuccess}
+            </div>
+          )}
+
           {reviewOpen && (
             <form
               onSubmit={handleSubmitReview}
@@ -612,7 +666,7 @@ export const ProductDetailPage: React.FC = () => {
                 Share Your Olfactory Impression
               </h3>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs text-white/60 mb-1.5">Your Name *</label>
                   <input
@@ -632,6 +686,18 @@ export const ProductDetailPage: React.FC = () => {
                     onChange={(e) => setReviewLocation(e.target.value)}
                     placeholder="e.g., Karachi / Lahore"
                     className="w-full h-11 px-3.5 rounded-lg bg-[#050508] border border-white/15 text-sm text-white focus:outline-none focus:border-[#d6be96]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-white/60 mb-1.5">
+                    Order # (Optional Verified)
+                  </label>
+                  <input
+                    type="text"
+                    value={reviewOrderNumber}
+                    onChange={(e) => setReviewOrderNumber(e.target.value)}
+                    placeholder="NV-12345"
+                    className="w-full h-11 px-3.5 rounded-lg bg-[#050508] border border-white/15 text-sm font-mono-tabular uppercase text-white focus:outline-none focus:border-[#d6be96]"
                   />
                 </div>
               </div>
@@ -684,41 +750,63 @@ export const ProductDetailPage: React.FC = () => {
                 />
               </div>
 
+              {reviewError && (
+                <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-xs text-red-300">
+                  {reviewError}
+                </div>
+              )}
+
               <button
                 type="submit"
-                className="w-full sm:w-auto h-11 px-6 rounded-lg bg-[#f2e6d5] hover:bg-[#d6be96] text-[#050508] text-xs font-semibold uppercase tracking-[0.14em] transition-colors cursor-pointer"
+                disabled={isSubmittingReview}
+                className="w-full sm:w-auto h-11 px-6 rounded-lg bg-[#f2e6d5] hover:bg-[#d6be96] disabled:opacity-60 text-[#050508] text-xs font-semibold uppercase tracking-[0.14em] transition-colors cursor-pointer inline-flex items-center justify-center gap-2"
               >
-                Publish Review
+                {isSubmittingReview ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Saving Review...</span>
+                  </>
+                ) : (
+                  <span>Publish Review</span>
+                )}
               </button>
             </form>
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-            {allReviews.map((rev) => (
-              <div
-                key={rev.id}
-                className="p-5 sm:p-6 rounded-xl bg-[#0a0a0f] border border-white/[0.08] space-y-3 perfume-ambient-panel"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1 text-[#d6be96]">
-                    {Array.from({ length: 5 }).map((_, i) => (
-                      <Star
-                        key={i}
-                        className={`w-3.5 h-3.5 ${i < rev.rating ? 'fill-[#d6be96]' : 'opacity-25'}`}
-                      />
-                    ))}
+            {allReviews.map((rev) => {
+              const isVerified = (rev as { verifiedPurchase?: boolean }).verifiedPurchase;
+              return (
+                <div
+                  key={rev.id}
+                  className="p-5 sm:p-6 rounded-xl bg-[#0a0a0f] border border-white/[0.08] space-y-3 perfume-ambient-panel"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1 text-[#d6be96]">
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <Star
+                          key={i}
+                          className={`w-3.5 h-3.5 ${
+                            i < rev.rating ? 'fill-[#d6be96]' : 'opacity-25'
+                          }`}
+                        />
+                      ))}
+                    </div>
+                    <span className="text-xs text-white/40">{rev.date}</span>
                   </div>
-                  <span className="text-xs text-white/40">{rev.date}</span>
+
+                  <h3 className="font-serif-display text-xl sm:text-2xl text-white">{rev.title}</h3>
+                  <p className="text-sm text-white/65 leading-relaxed">{rev.comment}</p>
+
+                  <p className="pt-2 text-xs text-white/45">
+                    <span className="text-white/80 font-medium">{rev.author}</span> · {rev.location}
+                    {isVerified && (
+                      <span className="text-[#36d67e]"> · Verified Order</span>
+                    )}
+                  </p>
                 </div>
-
-                <h3 className="font-serif-display text-xl sm:text-2xl text-white">{rev.title}</h3>
-                <p className="text-sm text-white/65 leading-relaxed">{rev.comment}</p>
-
-                <p className="pt-2 text-xs text-white/45">
-                  <span className="text-white/80 font-medium">{rev.author}</span> · {rev.location}
-                </p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </section>
