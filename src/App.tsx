@@ -101,10 +101,10 @@ export default function App() {
     <BrowserRouter>
       <StoreProvider>
         <ScrollAndShortcuts />
-        <div className="min-h-screen flex flex-col bg-transparent text-[#f5f3ef] font-sans-body">
+        <div className="min-h-screen w-full overflow-x-clip flex flex-col bg-transparent text-[#f5f3ef] font-sans-body">
           <Navbar />
 
-          <main className="flex-1">
+          <main className="flex-1 min-w-0">
             <AnimatedRoutes />
           </main>
 

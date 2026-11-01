@@ -6,7 +6,7 @@ import { SEOHead } from '../components/LuxuryUI';
 const FAQS = [
   {
     q: 'What is the price of each NORVA signature fragrance?',
-    a: 'All five NORVA 100 ml smoked-glass signature fragrances—Khamrah Qawa, Cool Water, 9mM Rebel, Jadora, and Gucci Flora—are priced at PKR 2,500 each.',
+    a: 'All five NORVA 50ml smoked-glass signature fragrances—Khamrah Qawa, Cool Water, 9mM Rebel, Jadora, and Gucci Flora—are priced at PKR 2,500 each.',
   },
   {
     q: 'How long do NORVA fragrances last on skin and clothes?',
@@ -57,19 +57,19 @@ export const ContactPage: React.FC = () => {
       />
 
       {/* Header */}
-      <section className="relative overflow-hidden border-b border-white/[0.08] py-16 lg:py-20 bg-[#050508]">
+      <section className="relative overflow-hidden border-b border-white/[0.08] py-10 sm:py-16 lg:py-20 bg-[#050508]">
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_60%_75%_at_75%_35%,rgba(214,190,150,0.10),rgba(82,214,196,0.05)_50%,transparent_76%)]"
         />
-        <div className="relative max-w-[1380px] mx-auto px-4 sm:px-8 space-y-4">
-          <p className="text-xs font-medium uppercase tracking-[0.22em] text-[#d6be96]">
+        <div className="relative max-w-[1380px] mx-auto px-3.5 sm:px-8 space-y-3 sm:space-y-4">
+          <p className="text-[11px] sm:text-xs font-medium uppercase tracking-[0.2em] sm:tracking-[0.22em] text-[#d6be96]">
             NORVA Client Concierge
           </p>
-          <h1 className="font-serif-display text-5xl sm:text-6xl font-medium text-white leading-[1.02]">
+          <h1 className="font-serif-display text-3xl min-[375px]:text-4xl sm:text-6xl font-medium text-white leading-[1.04] sm:leading-[1.02]">
             At Your Personal Service
           </h1>
-          <p className="text-base text-white/62 max-w-2xl leading-relaxed">
+          <p className="text-sm sm:text-base text-white/62 max-w-2xl leading-relaxed">
             Whether seeking scent pairing advice among our five signature creations or assistance
             with an existing order, our concierge team responds within one business day.
           </p>
@@ -77,20 +77,20 @@ export const ContactPage: React.FC = () => {
       </section>
 
       {/* Contact Form & Salon Directory */}
-      <section className="py-16 border-b border-white/[0.08]">
-        <div className="max-w-[1380px] mx-auto px-4 sm:px-8 grid grid-cols-1 lg:grid-cols-12 gap-12">
+      <section className="py-10 sm:py-16 border-b border-white/[0.08]">
+        <div className="max-w-[1380px] mx-auto px-3.5 sm:px-8 grid grid-cols-1 lg:grid-cols-12 gap-8 sm:gap-12">
           {/* Form */}
           <div className="lg:col-span-7">
-            <div className="p-7 sm:p-10 rounded-2xl bg-[#0a0a0f] border border-white/10 perfume-ambient-panel">
+            <div className="p-5 sm:p-10 rounded-2xl bg-[#0a0a0f] border border-white/10 perfume-ambient-panel">
               {submitted ? (
-                <div className="py-10 space-y-4">
+                <div className="py-8 sm:py-10 space-y-4">
                   <div className="w-12 h-12 rounded-full bg-[#36d67e]/15 border border-[#36d67e]/40 flex items-center justify-center text-[#36d67e]">
                     <Check className="w-6 h-6" />
                   </div>
-                  <h2 className="font-serif-display text-3xl text-white">
+                  <h2 className="font-serif-display text-2xl sm:text-3xl text-white">
                     Thank You, {name}
                   </h2>
-                  <p className="text-sm text-white/65 leading-relaxed max-w-lg">
+                  <p className="text-sm text-white/65 leading-relaxed max-w-lg break-words">
                     Your message regarding <strong>{topic}</strong> has been logged with NORVA
                     Client Concierge. We will reply to <strong>{email}</strong> shortly.
                   </p>
@@ -106,8 +106,10 @@ export const ContactPage: React.FC = () => {
                   </button>
                 </div>
               ) : (
-                <form onSubmit={handleSubmit} className="space-y-5">
-                  <h2 className="font-serif-display text-3xl text-white">Direct Inquiry</h2>
+                <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
+                  <h2 className="font-serif-display text-2xl sm:text-3xl text-white">
+                    Direct Inquiry
+                  </h2>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
@@ -166,7 +168,7 @@ export const ContactPage: React.FC = () => {
 
                   <button
                     type="submit"
-                    className="h-12 px-7 rounded-lg bg-[#f2e6d5] hover:bg-[#d6be96] text-[#050508] text-xs font-semibold uppercase tracking-[0.14em] transition-colors cursor-pointer"
+                    className="w-full sm:w-auto h-12 px-7 rounded-lg bg-[#f2e6d5] hover:bg-[#d6be96] text-[#050508] text-xs font-semibold uppercase tracking-[0.14em] transition-colors cursor-pointer"
                   >
                     Send Message
                   </button>
@@ -177,7 +179,7 @@ export const ContactPage: React.FC = () => {
 
           {/* Studios, Email & Social */}
           <div className="lg:col-span-5 space-y-6">
-            <div className="p-7 rounded-2xl bg-[#0a0a0f] border border-white/10 perfume-ambient-panel space-y-5">
+            <div className="p-5 sm:p-7 rounded-2xl bg-[#0a0a0f] border border-white/10 perfume-ambient-panel space-y-5">
               <h3 className="font-serif-display text-2xl text-white">NORVA Studios &amp; Support</h3>
 
               <div className="space-y-4 text-sm text-white/70">
@@ -203,7 +205,7 @@ export const ContactPage: React.FC = () => {
 
                 <div className="flex items-start gap-3">
                   <Mail className="w-4 h-4 text-[#d6be96] shrink-0 mt-1" />
-                  <div>
+                  <div className="min-w-0 break-all sm:break-normal">
                     <p className="font-medium text-white">concierge@norvaparfums.com</p>
                     <p className="text-xs text-white/55">orders@norvaparfums.com</p>
                   </div>
@@ -233,12 +235,12 @@ export const ContactPage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-white/[0.07] flex items-center gap-5 text-xs text-white/60">
+              <div className="pt-4 border-t border-white/[0.07] flex flex-wrap items-center gap-4 sm:gap-5 text-xs text-white/60">
                 <a
                   href="https://instagram.com"
                   target="_blank"
                   rel="noreferrer"
-                  className="hover:text-[#d6be96] transition-colors"
+                  className="min-h-[36px] sm:min-h-0 inline-flex items-center hover:text-[#d6be96] transition-colors"
                 >
                   Instagram ↗
                 </a>
@@ -246,7 +248,7 @@ export const ContactPage: React.FC = () => {
                   href="https://pinterest.com"
                   target="_blank"
                   rel="noreferrer"
-                  className="hover:text-[#d6be96] transition-colors"
+                  className="min-h-[36px] sm:min-h-0 inline-flex items-center hover:text-[#d6be96] transition-colors"
                 >
                   Pinterest ↗
                 </a>
@@ -254,7 +256,7 @@ export const ContactPage: React.FC = () => {
                   href="https://youtube.com"
                   target="_blank"
                   rel="noreferrer"
-                  className="hover:text-[#d6be96] transition-colors"
+                  className="min-h-[36px] sm:min-h-0 inline-flex items-center hover:text-[#d6be96] transition-colors"
                 >
                   Atelier Films ↗
                 </a>
@@ -265,13 +267,13 @@ export const ContactPage: React.FC = () => {
       </section>
 
       {/* Frequently Asked Questions */}
-      <section className="py-20">
-        <div className="max-w-[920px] mx-auto px-4 sm:px-8 space-y-10">
+      <section className="py-12 sm:py-20">
+        <div className="max-w-[920px] mx-auto px-3.5 sm:px-8 space-y-7 sm:space-y-10">
           <div className="space-y-2 text-center">
-            <p className="text-xs font-medium uppercase tracking-[0.2em] text-[#d6be96]">
+            <p className="text-[11px] sm:text-xs font-medium uppercase tracking-[0.2em] text-[#d6be96]">
               Frequently Asked Questions
             </p>
-            <h2 className="font-serif-display text-4xl text-white">
+            <h2 className="font-serif-display text-3xl sm:text-4xl text-white">
               Pricing, Delivery &amp; Longevity
             </h2>
           </div>
@@ -287,9 +289,9 @@ export const ContactPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setOpenFaqIdx(isOpen ? null : idx)}
-                    className="w-full p-5 text-left flex items-center justify-between gap-4 cursor-pointer"
+                    className="w-full p-4 sm:p-5 text-left flex items-center justify-between gap-3 sm:gap-4 cursor-pointer"
                   >
-                    <span className="font-serif-display text-xl sm:text-2xl text-white">
+                    <span className="font-serif-display text-lg sm:text-2xl text-white leading-snug">
                       {item.q}
                     </span>
                     <ChevronDown
@@ -299,7 +301,7 @@ export const ContactPage: React.FC = () => {
                     />
                   </button>
                   {isOpen && (
-                    <div className="px-5 pb-5 text-sm text-white/65 leading-relaxed border-t border-white/[0.05] pt-4">
+                    <div className="px-4 pb-4 sm:px-5 sm:pb-5 text-sm text-white/65 leading-relaxed border-t border-white/[0.05] pt-3.5 sm:pt-4">
                       {item.a}
                     </div>
                   )}

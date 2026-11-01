@@ -182,42 +182,42 @@ export const ProductCard: React.FC<{
         className={`pointer-events-none absolute inset-0 opacity-75 group-hover:opacity-100 transition-opacity duration-200 ${aura.ambientGlow}`}
       />
 
-      {/* Uniform 1:1 Product Imagery */}
+      {/* Uniform 1:1 Product Imagery — uncropped on mobile, exact studio fill on desktop */}
       <div className="relative aspect-square w-full overflow-hidden bg-[#050508]">
         <Link to={`/product/${product.slug}`} className="block w-full h-full">
           <LuxuryImage
             src={product.primaryImage}
             alt={product.name}
             priority={index < 3}
-            className="w-full h-full object-cover object-center transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.04] will-change-transform"
+            className="w-full h-full object-contain lg:object-cover object-center transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.04] will-change-transform"
           />
         </Link>
 
         {/* Subtle single text label top-left (Zero pill spam) */}
         {!inStock ? (
-          <span className="pointer-events-none absolute top-3.5 left-4 text-[11px] font-medium tracking-[0.14em] uppercase text-red-300">
+          <span className="pointer-events-none absolute top-2.5 left-2.5 sm:top-3.5 sm:left-4 text-[9.5px] sm:text-[11px] font-medium tracking-[0.1em] sm:tracking-[0.14em] uppercase text-red-300">
             Out of Stock
           </span>
         ) : (
           (product.isBestSeller || product.isNewArrival) && (
-            <span className="pointer-events-none absolute top-3.5 left-4 text-[11px] font-medium tracking-[0.14em] uppercase text-[#d6be96] drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)]">
+            <span className="pointer-events-none absolute top-2.5 left-2.5 sm:top-3.5 sm:left-4 text-[9.5px] sm:text-[11px] font-medium tracking-[0.1em] sm:tracking-[0.14em] uppercase text-[#d6be96] drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)]">
               {product.isBestSeller ? 'Best Seller' : 'New Arrival'}
             </span>
           )
         )}
 
-        {/* Wishlist toggle top-right */}
+        {/* Wishlist toggle top-right (40px touch hitbox on mobile, 36px on desktop) */}
         <button
           type="button"
           onClick={() => toggleWishlist(product.id)}
           aria-label={wished ? `Remove ${product.name} from wishlist` : `Save ${product.name} to wishlist`}
-          className="absolute top-3 right-3 w-9 h-9 rounded-full bg-[#09090d]/90 border border-white/15 flex items-center justify-center text-white/75 hover:text-[#d6be96] active:scale-95 transition-all duration-150 cursor-pointer"
+          className="absolute top-2 right-2 sm:top-3 sm:right-3 w-10 h-10 sm:w-9 sm:h-9 rounded-full bg-[#09090d]/90 border border-white/15 flex items-center justify-center text-white/75 hover:text-[#d6be96] active:scale-95 transition-all duration-150 cursor-pointer"
         >
           <Heart className={`w-4 h-4 ${wished ? 'fill-[#d6be96] text-[#d6be96]' : ''}`} />
         </button>
 
-        {/* Quick View & Quick Add bar — visible on touch/mobile, smooth reveal on desktop hover */}
-        <div className="absolute inset-x-3 bottom-3 flex items-center gap-2 opacity-100 translate-y-0 lg:opacity-0 lg:translate-y-2 lg:group-hover:opacity-100 lg:group-hover:translate-y-0 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]">
+        {/* Desktop hover-reveal Quick Add & Quick View bar (100% preserved on lg:) */}
+        <div className="hidden lg:flex absolute inset-x-3 bottom-3 items-center gap-2 opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]">
           <button
             type="button"
             disabled={!inStock}
@@ -239,46 +239,76 @@ export const ProductCard: React.FC<{
             className="h-9 px-3 rounded-lg bg-[#09090d]/94 hover:bg-[#14141e] text-white/90 border border-white/18 text-xs font-medium flex items-center justify-center gap-1.5 active:scale-[0.98] transition-all duration-150 cursor-pointer whitespace-nowrap shrink-0 shadow-[0_8px_20px_rgba(0,0,0,0.85)]"
           >
             <Eye className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Quick View</span>
+            <span>Quick View</span>
           </button>
         </div>
       </div>
 
       {/* Contiguous clean typography metadata */}
-      <div className="relative z-[1] flex flex-col flex-1 justify-between p-5 gap-3">
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-1.5 text-[11.5px] text-white/45">
-            <span>{product.concentration}</span>
-            <span aria-hidden="true">·</span>
-            <span>{product.family}</span>
+      <div className="relative z-[1] flex flex-col flex-1 justify-between p-3 sm:p-5 gap-2.5 sm:gap-3 min-w-0">
+        <div className="space-y-1 sm:space-y-1.5 min-w-0">
+          <div className="flex items-center gap-1.5 text-[10px] sm:text-[11.5px] text-white/45 truncate">
+            <span className="truncate">{product.concentration}</span>
+            <span aria-hidden="true" className="shrink-0">·</span>
+            <span className="truncate">{product.family}</span>
           </div>
 
           <Link
             to={`/product/${product.slug}`}
-            className="block font-serif-display text-2xl font-medium text-white group-hover:text-[#d6be96] transition-colors duration-200 leading-tight"
+            className="block font-serif-display text-lg min-[390px]:text-xl sm:text-2xl font-medium text-white group-hover:text-[#d6be96] transition-colors duration-200 leading-snug sm:leading-tight truncate"
           >
             {product.name}
           </Link>
 
-          <p className="text-xs text-white/55 line-clamp-2 leading-relaxed">
+          <p className="text-[11px] sm:text-xs text-white/55 line-clamp-1 sm:line-clamp-2 leading-relaxed">
             {product.keyNotesSummary}
           </p>
         </div>
 
-        <div className="pt-3 border-t border-white/[0.06] flex items-center justify-between gap-3">
-          <div className="flex items-baseline gap-1.5">
-            <span className="font-mono-tabular text-[15px] font-medium text-white">
-              {formatPKR(displayOption.price)}
-            </span>
-            <span className="text-[11.5px] text-white/40">/ {displayOption.label}</span>
+        <div className="pt-2.5 sm:pt-3 border-t border-white/[0.06] space-y-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-baseline gap-1 sm:gap-1.5 min-w-0">
+              <span className="font-mono-tabular text-[13px] min-[390px]:text-[14px] sm:text-[15px] font-medium text-white whitespace-nowrap">
+                {formatPKR(displayOption.price)}
+              </span>
+              <span className="text-[10.5px] sm:text-[11.5px] text-white/40 whitespace-nowrap">
+                / {displayOption.label}
+              </span>
+            </div>
+
+            <Link
+              to={`/product/${product.slug}`}
+              className="hidden sm:inline text-xs font-medium text-white/75 hover:text-[#d6be96] transition-colors duration-150 whitespace-nowrap shrink-0"
+            >
+              Explore →
+            </Link>
           </div>
 
-          <Link
-            to={`/product/${product.slug}`}
-            className="text-xs font-medium text-white/75 hover:text-[#d6be96] transition-colors duration-150 whitespace-nowrap shrink-0"
-          >
-            Explore →
-          </Link>
+          {/* Dedicated unobstructed touch-friendly action bar on mobile/tablet (< lg) */}
+          <div className="flex lg:hidden items-center gap-1.5">
+            <button
+              type="button"
+              disabled={!inStock}
+              onClick={() => addToCart(product, defaultSizeIdx, 1, true)}
+              className={`flex-1 min-h-[40px] px-2.5 rounded-lg text-[11px] sm:text-xs font-semibold flex items-center justify-center gap-1.5 active:scale-[0.98] transition-all duration-150 whitespace-nowrap min-w-0 ${
+                inStock
+                  ? 'bg-[#f2e6d5] active:bg-[#d6be96] text-[#050508] cursor-pointer'
+                  : 'bg-white/15 text-white/50 cursor-not-allowed'
+              }`}
+            >
+              <ShoppingBag className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{inStock ? `Add · ${displayOption.label}` : 'Sold Out'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => openQuickView(product)}
+              aria-label={`Quick view ${product.name}`}
+              className="w-10 h-10 shrink-0 rounded-lg bg-[#101018] border border-white/15 text-white/85 active:scale-95 flex items-center justify-center cursor-pointer"
+            >
+              <Eye className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
     </motion.article>

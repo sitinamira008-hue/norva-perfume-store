@@ -166,20 +166,51 @@ function writeStorageDeferred(key: string, value: unknown): void {
 const StoreContext = createContext<StoreContextValue | null>(null);
 
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [cart, setCart] = useState<CartItem[]>(() =>
-    readStorage<CartItem[]>(STORAGE_KEYS.cart, []).map((item) => {
+  const [cart, setCart] = useState<CartItem[]>(() => {
+    const deduped = new Map<string, CartItem>();
+    for (const item of readStorage<CartItem[]>(STORAGE_KEYS.cart, [])) {
       const current = PRODUCTS.find((p) => p.id === item.productId);
-      if (!current) return item;
-      return {
-        ...item,
-        name: current.name,
-        slug: current.slug,
-        image: current.primaryImage,
-      };
-    }),
-  );
+      if (!current) {
+        deduped.set(item.key, item);
+        continue;
+      }
+      const sz = current.sizes[0];
+      const nextKey = `${current.id}__${sz.sku}`;
+      const existing = deduped.get(nextKey);
+      if (existing) {
+        existing.quantity += item.quantity;
+      } else {
+        deduped.set(nextKey, {
+          ...item,
+          key: nextKey,
+          name: current.name,
+          slug: current.slug,
+          image: current.primaryImage,
+          sizeLabel: sz.label,
+          sizeSku: sz.sku,
+        });
+      }
+    }
+    return Array.from(deduped.values());
+  });
   const [wishlist, setWishlist] = useState<string[]>(() => readStorage(STORAGE_KEYS.wishlist, []));
-  const [orders, setOrders] = useState<PlacedOrder[]>(() => readStorage(STORAGE_KEYS.orders, []));
+  const [orders, setOrders] = useState<PlacedOrder[]>(() =>
+    readStorage<PlacedOrder[]>(STORAGE_KEYS.orders, []).map((ord) => ({
+      ...ord,
+      items: ord.items.map((it) => {
+        const current = PRODUCTS.find((p) => p.id === it.productId);
+        if (!current) return it;
+        return {
+          ...it,
+          name: current.name,
+          slug: current.slug,
+          image: current.primaryImage,
+          sizeLabel: current.sizes[0].label,
+          sizeSku: current.sizes[0].sku,
+        };
+      }),
+    })),
+  );
   const [profile, setProfile] = useState<CustomerProfile>(() =>
     readStorage(STORAGE_KEYS.profile, DEFAULT_PROFILE),
   );

@@ -299,7 +299,7 @@ export class FacetBottleScene {
           titleLine2: 'Qawa',
           notesLine: 'Oud · Leather · Amber · Saffron',
           concentration: 'EXTRAIT DE PARFUM',
-          volume: '100 ML',
+          volume: '50 ML',
           editionCode: 'N° 01 · OUD',
         },
       },
@@ -311,7 +311,7 @@ export class FacetBottleScene {
           titleLine2: 'Water',
           notesLine: 'Rose · Vanilla · Musk · Jasmine',
           concentration: 'EAU DE PARFUM INTENSE',
-          volume: '100 ML',
+          volume: '50 ML',
           editionCode: 'N° 02 · FLORAL',
         },
       },
@@ -323,7 +323,7 @@ export class FacetBottleScene {
           titleLine2: 'Rebel',
           notesLine: 'Bergamot · Marine Accords · Cedarwood',
           concentration: 'EAU DE PARFUM',
-          volume: '100 ML',
+          volume: '50 ML',
           editionCode: 'N° 03 · MARINE',
         },
       },
@@ -335,7 +335,7 @@ export class FacetBottleScene {
           titleLine2: 'Parfum',
           notesLine: 'Oud · Sandalwood · Amber · Spices',
           concentration: 'EXTRAIT DE PARFUM',
-          volume: '100 ML',
+          volume: '50 ML',
           editionCode: 'N° 04 · AMBER',
         },
       },
@@ -347,7 +347,7 @@ export class FacetBottleScene {
           titleLine2: 'Flora',
           notesLine: 'White Musk · Iris · Citrus · Cashmere',
           concentration: 'EAU DE PARFUM',
-          volume: '100 ML',
+          volume: '50 ML',
           editionCode: 'N° 05 · IRIS',
         },
       },
@@ -726,8 +726,8 @@ export class FacetBottleScene {
     if (this.disposed) return;
     const rect = this.container.getBoundingClientRect();
     this.cachedRect = rect;
-    const nextWidth = Math.max(280, rect.width || 640);
-    const nextHeight = Math.max(320, rect.height || 640);
+    const nextWidth = Math.max(250, rect.width || 640);
+    const nextHeight = Math.max(260, rect.height || 640);
 
     if (
       !force &&
@@ -754,16 +754,18 @@ export class FacetBottleScene {
     this.camera.far = camZ * 5.5;
     this.camera.updateProjectionMatrix();
 
-    const heightFitScale = (this.height * 0.70) / 610;
-    const widthFitScale = (this.width * 0.68) / 360;
-    const S = Math.max(0.42, Math.min(1.18, Math.min(widthFitScale, heightFitScale)));
+    const isCompactStage = this.width < 640;
+    const heightFitScale = (this.height * (isCompactStage ? 0.64 : 0.70)) / 610;
+    const widthFitScale = (this.width * (isCompactStage ? 0.65 : 0.68)) / 360;
+    const S = Math.max(0.32, Math.min(1.18, Math.min(widthFitScale, heightFitScale)));
 
     this.layoutScale = S;
     this.sharedUniforms.uLayoutScale.value = S;
     this.particleMaterial.size = 10 * S;
 
     const bottleOffsetX = this.centered ? 0 : this.width >= 1024 ? this.width * 0.14 : 0;
-    this.bottleRoot.position.set(bottleOffsetX, -8 * S, 0);
+    const baseYOffset = isCompactStage ? 8 * S : -8 * S;
+    this.bottleRoot.position.set(bottleOffsetX, baseYOffset, 0);
   };
 
   private onVisibilityChange = (): void => {
@@ -799,6 +801,7 @@ export class FacetBottleScene {
     this.renderer.domElement.addEventListener('webglcontextlost', this.onContextLost);
     this.renderer.domElement.addEventListener('webglcontextrestored', this.onContextRestored);
     window.addEventListener('pointerup', this.onPointerUp, { passive: true });
+    window.addEventListener('pointercancel', this.onPointerUp, { passive: true });
 
     if (typeof ResizeObserver !== 'undefined') {
       this.resizeObserver = new ResizeObserver(() => this.scheduleResize());
@@ -1034,8 +1037,9 @@ export class FacetBottleScene {
     const explodeT = stepSpring(this.explodeSpring, this.isExploded ? 1.0 : 0.0, dt, 145, 19);
 
     const stageFitScale = entranceScale * (1.0 - 0.11 * explodeT);
+    const restCenterY = this.width < 640 ? 8 : -10;
     this.bottleRoot.scale.setScalar(S * stageFitScale);
-    this.bottleRoot.position.y = (-10 - 16 * explodeT) * S + floatY;
+    this.bottleRoot.position.y = (restCenterY - 16 * explodeT) * S + floatY;
     this.bottleRoot.rotation.set(
       this.currentTiltX,
       this.currentTiltY + idleSwayY,
@@ -1163,6 +1167,7 @@ export class FacetBottleScene {
     this.container.removeEventListener('pointermove', this.onPointerMove);
     this.container.removeEventListener('pointerleave', this.onPointerLeave);
     window.removeEventListener('pointerup', this.onPointerUp);
+    window.removeEventListener('pointercancel', this.onPointerUp);
     this.renderer.domElement.removeEventListener('pointerdown', this.onPointerDown);
     this.renderer.domElement.removeEventListener('webglcontextlost', this.onContextLost);
     this.renderer.domElement.removeEventListener('webglcontextrestored', this.onContextRestored);

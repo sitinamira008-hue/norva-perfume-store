@@ -101,7 +101,7 @@ export const WhatsAppFloatingButton: React.FC = () => {
     return buildWhatsAppUrl(
       [
         'Assalam o Alaikum NORVA! 👋',
-        'I would like to order from your 5 Signature Fragrances (PKR 2,500).',
+        'I would like to order from your 5 Signature Fragrances (50ml · PKR 2,500).',
         '',
         'Fragrance Name: ',
         'My Name: ',
@@ -138,7 +138,7 @@ export const WhatsAppFloatingButton: React.FC = () => {
   }
 
   return (
-    <div className="fixed bottom-5 right-5 z-40 flex flex-col items-end gap-3">
+    <div className="fixed bottom-3.5 right-3.5 sm:bottom-5 sm:right-5 z-40 max-w-[calc(100vw-1.75rem)] flex flex-col items-end gap-2.5 sm:gap-3">
       {/* Optional Quick-Order Popover */}
       <AnimatePresence>
         {isQuickOpen && quickSelectedProduct && (
@@ -147,10 +147,10 @@ export const WhatsAppFloatingButton: React.FC = () => {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 12, scale: 0.97 }}
             transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-            className="w-[310px] sm:w-[340px] rounded-xl bg-[#09090d] border border-[#25D366]/35 shadow-[0_24px_60px_rgba(0,0,0,0.95),0_10px_30px_rgba(37,211,102,0.18)] overflow-hidden will-change-[opacity,transform]"
+            className="w-[calc(100vw-1.75rem)] max-w-[340px] sm:w-[340px] rounded-xl bg-[#09090d] border border-[#25D366]/35 shadow-[0_24px_60px_rgba(0,0,0,0.95),0_10px_30px_rgba(37,211,102,0.18)] overflow-hidden will-change-[opacity,transform]"
           >
             {/* Header */}
-            <div className="px-4 py-3.5 bg-[#0b1610] border-b border-white/[0.08] flex items-center justify-between">
+            <div className="px-3.5 sm:px-4 py-3 sm:py-3.5 bg-[#0b1610] border-b border-white/[0.08] flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-[#25D366] text-[#050508] flex items-center justify-center shrink-0">
                   <WhatsAppIcon className="w-4 h-4" />
@@ -168,14 +168,14 @@ export const WhatsAppFloatingButton: React.FC = () => {
                 type="button"
                 onClick={() => setIsQuickOpen(false)}
                 aria-label="Close WhatsApp quick order"
-                className="p-1 text-white/50 hover:text-white cursor-pointer"
+                className="w-9 h-9 -mr-1.5 flex items-center justify-center text-white/50 hover:text-white cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             {/* Body */}
-            <div className="p-4 space-y-3 text-xs">
+            <div className="p-3.5 sm:p-4 space-y-3 text-xs">
               <div>
                 <label className="block text-[11px] text-white/55 mb-1">
                   Select Signature Fragrance
@@ -183,23 +183,23 @@ export const WhatsAppFloatingButton: React.FC = () => {
                 <select
                   value={quickSelectedProduct.id}
                   onChange={(e) => setSelectedProductId(e.target.value)}
-                  className="w-full h-9 px-3 rounded-lg bg-[#050508] border border-white/15 text-xs text-white focus:outline-none focus:border-[#25D366]"
+                  className="w-full h-10 sm:h-9 px-3 rounded-lg bg-[#050508] border border-white/15 text-xs text-white focus:outline-none focus:border-[#25D366]"
                 >
                   {products.map((p, idx) => (
                     <option key={p.id} value={p.id} className="bg-[#09090d] text-white">
-                      0{idx + 1}. {p.name} — {formatPKR(p.sizes[0].price)}
+                      0{idx + 1}. {p.name} ({p.sizes[0].label}) — {formatPKR(p.sizes[0].price)}
                     </option>
                   ))}
                 </select>
               </div>
 
               <div className="flex items-center justify-between gap-3">
-                <span className="text-[11px] text-white/55">Quantity (100 ml)</span>
-                <div className="h-8 px-2 rounded-lg bg-[#050508] border border-white/15 flex items-center gap-2.5">
+                <span className="text-[11px] text-white/55">Quantity (50ml)</span>
+                <div className="h-9 sm:h-8 px-1.5 sm:px-2 rounded-lg bg-[#050508] border border-white/15 flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() => setQuickQty((q) => Math.max(1, q - 1))}
-                    className="p-1 text-white/65 hover:text-white cursor-pointer"
+                    className="w-8 h-8 sm:w-auto sm:h-auto sm:p-1 flex items-center justify-center text-white/65 hover:text-white cursor-pointer"
                     aria-label="Decrease quantity"
                   >
                     <Minus className="w-3 h-3" />
@@ -210,7 +210,7 @@ export const WhatsAppFloatingButton: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setQuickQty((q) => q + 1)}
-                    className="p-1 text-white/65 hover:text-white cursor-pointer"
+                    className="w-8 h-8 sm:w-auto sm:h-auto sm:p-1 flex items-center justify-center text-white/65 hover:text-white cursor-pointer"
                     aria-label="Increase quantity"
                   >
                     <Plus className="w-3 h-3" />
@@ -218,20 +218,20 @@ export const WhatsAppFloatingButton: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 min-[360px]:grid-cols-2 gap-2">
                 <input
                   type="text"
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
                   placeholder="Your Name (optional)"
-                  className="h-9 px-2.5 rounded-lg bg-[#050508] border border-white/12 text-xs text-white placeholder:text-white/35 focus:outline-none focus:border-[#25D366]"
+                  className="h-10 sm:h-9 px-2.5 rounded-lg bg-[#050508] border border-white/12 text-xs text-white placeholder:text-white/35 focus:outline-none focus:border-[#25D366]"
                 />
                 <input
                   type="text"
                   value={customerCity}
                   onChange={(e) => setCustomerCity(e.target.value)}
                   placeholder="City (e.g. Karachi)"
-                  className="h-9 px-2.5 rounded-lg bg-[#050508] border border-white/12 text-xs text-white placeholder:text-white/35 focus:outline-none focus:border-[#25D366]"
+                  className="h-10 sm:h-9 px-2.5 rounded-lg bg-[#050508] border border-white/12 text-xs text-white placeholder:text-white/35 focus:outline-none focus:border-[#25D366]"
                 />
               </div>
 
@@ -259,9 +259,9 @@ export const WhatsAppFloatingButton: React.FC = () => {
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={() => setIsQuickOpen(false)}
-                  className="w-full h-9 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] border border-white/12 text-white text-[11px] font-medium flex items-center justify-center gap-1.5 transition-colors"
+                  className="w-full h-10 sm:h-9 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] border border-white/12 text-white text-[11px] font-medium flex items-center justify-center gap-1.5 transition-colors px-2"
                 >
-                  <span>
+                  <span className="truncate">
                     Order Current Bag ({cartCount} {cartCount === 1 ? 'item' : 'items'} ·{' '}
                     {formatPKR(cartSubtotal)})
                   </span>
@@ -273,22 +273,22 @@ export const WhatsAppFloatingButton: React.FC = () => {
       </AnimatePresence>
 
       {/* Main Floating Bar: 1-Click Direct WhatsApp Link + Quick-Picker Toggle */}
-      <div className="flex items-stretch rounded-xl bg-[#0b0b11]/98 border border-[#25D366]/45 hover:border-[#25D366] shadow-[0_18px_44px_-8px_rgba(0,0,0,0.95),0_8px_28px_-8px_rgba(37,211,102,0.28)] overflow-hidden smooth-lift hover:-translate-y-0.5">
+      <div className="flex items-stretch rounded-xl bg-[#0b0b11]/98 border border-[#25D366]/45 hover:border-[#25D366] shadow-[0_18px_44px_-8px_rgba(0,0,0,0.95),0_8px_28px_-8px_rgba(37,211,102,0.28)] overflow-hidden smooth-lift hover:-translate-y-0.5 max-w-full">
         <a
           href={directWhatsAppUrl}
           target="_blank"
           rel="noopener noreferrer"
           aria-label={`Order on WhatsApp ${WHATSAPP_DISPLAY}`}
-          className="flex items-center gap-3 pl-3 pr-3.5 py-2.5 group"
+          className="flex items-center gap-2.5 sm:gap-3 pl-2.5 pr-2.5 py-2 sm:pl-3 sm:pr-3.5 sm:py-2.5 group min-w-0"
         >
-          <span className="w-9 h-9 rounded-lg bg-[#25D366] group-hover:bg-[#32e275] text-[#050507] flex items-center justify-center shrink-0 transition-colors">
-            <WhatsAppIcon className="w-5 h-5" />
+          <span className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-[#25D366] group-hover:bg-[#32e275] text-[#050507] flex items-center justify-center shrink-0 transition-colors">
+            <WhatsAppIcon className="w-4 h-4 sm:w-5 sm:h-5" />
           </span>
-          <span className="flex flex-col text-left leading-tight">
-            <span className="text-xs font-semibold text-white group-hover:text-[#36d67e] transition-colors">
+          <span className="flex flex-col text-left leading-tight min-w-0">
+            <span className="text-[11.5px] sm:text-xs font-semibold text-white group-hover:text-[#36d67e] transition-colors whitespace-nowrap">
               {cartCount > 0 ? `WhatsApp Bag (${cartCount})` : 'Order on WhatsApp'}
             </span>
-            <span className="font-mono-tabular text-[11px] text-white/65">
+            <span className="font-mono-tabular text-[10.5px] sm:text-[11px] text-white/65 whitespace-nowrap">
               {WHATSAPP_DISPLAY}
             </span>
           </span>
@@ -299,7 +299,7 @@ export const WhatsAppFloatingButton: React.FC = () => {
           onClick={() => setIsQuickOpen((prev) => !prev)}
           title="Quick-select fragrance for WhatsApp order"
           aria-label="Toggle WhatsApp quick fragrance selector"
-          className="px-2.5 border-l border-white/10 text-white/60 hover:text-white hover:bg-white/[0.05] flex items-center justify-center transition-colors cursor-pointer"
+          className="min-w-[40px] sm:min-w-0 px-2.5 border-l border-white/10 text-white/60 hover:text-white hover:bg-white/[0.05] flex items-center justify-center transition-colors cursor-pointer shrink-0"
         >
           <ChevronUp
             className={`w-4 h-4 transition-transform duration-200 ${

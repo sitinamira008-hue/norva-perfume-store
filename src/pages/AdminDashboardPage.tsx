@@ -153,13 +153,13 @@ export const AdminDashboardPage: React.FC = () => {
   // =========================================================================
   if (!adminSession) {
     return (
-      <div className="min-h-[82vh] bg-transparent text-[#f5f3ef] flex items-center justify-center px-4 py-16">
+      <div className="min-h-[82vh] bg-transparent text-[#f5f3ef] flex items-center justify-center px-3.5 sm:px-4 py-10 sm:py-16">
         <SEOHead
           title="Admin Console Sign In"
           description="NORVA Haute Parfumerie Admin Dashboard authentication."
         />
 
-        <div className="w-full max-w-md p-8 sm:p-10 rounded-2xl bg-[#0a0a0f] border border-white/10 space-y-6">
+        <div className="w-full max-w-md p-5 sm:p-10 rounded-2xl bg-[#0a0a0f] border border-white/10 space-y-6">
           <div className="space-y-2 text-center">
             <div className="w-11 h-11 rounded-xl bg-white/[0.04] border border-white/10 flex items-center justify-center mx-auto text-[#d6be96]">
               <Lock className="w-5 h-5" />
@@ -210,13 +210,13 @@ export const AdminDashboardPage: React.FC = () => {
                     setLoginError(null);
                   }}
                   placeholder="Enter admin password"
-                  className="w-full h-11 pl-3.5 pr-10 rounded-lg bg-[#050508] border border-white/15 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-[#d6be96]"
+                  className="w-full h-11 pl-3.5 pr-11 rounded-lg bg-[#050508] border border-white/15 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-[#d6be96]"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
                   aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-white/45 hover:text-white cursor-pointer"
+                  className="w-10 h-10 flex items-center justify-center absolute right-1 top-1/2 -translate-y-1/2 text-white/45 hover:text-white cursor-pointer"
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -284,16 +284,16 @@ export const AdminDashboardPage: React.FC = () => {
 
       <div className="max-w-[1440px] mx-auto flex flex-col lg:flex-row min-h-[85vh]">
         {/* Left Workspace Sidebar */}
-        <aside className="w-full lg:w-64 shrink-0 bg-[#08080c] border-b lg:border-b-0 lg:border-r border-white/[0.08] p-5 flex flex-col justify-between gap-6">
-          <div className="space-y-6">
-            <div className="px-2">
+        <aside className="w-full lg:w-64 shrink-0 bg-[#08080c] border-b lg:border-b-0 lg:border-r border-white/[0.08] p-3.5 sm:p-5 flex flex-col justify-between gap-4 sm:gap-6">
+          <div className="space-y-4 sm:space-y-6">
+            <div className="px-1 sm:px-2">
               <p className="text-[11px] uppercase tracking-[0.2em] text-[#d6be96]">
                 Admin Workspace
               </p>
               <p className="font-serif-display text-2xl text-white mt-0.5">NORVA Console</p>
             </div>
 
-            <nav className="flex lg:flex-col gap-1.5 overflow-x-auto pb-1 lg:pb-0">
+            <nav className="flex lg:flex-col gap-1.5 overflow-x-auto no-scrollbar pb-1 lg:pb-0">
               {navItems.map((item) => {
                 const active = activeTab === item.id;
                 return (
@@ -301,7 +301,7 @@ export const AdminDashboardPage: React.FC = () => {
                     key={item.id}
                     type="button"
                     onClick={() => setActiveTab(item.id)}
-                    className={`flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-lg text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                    className={`flex items-center justify-between gap-3 min-h-[40px] sm:min-h-0 px-3.5 py-2.5 rounded-lg text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                       active
                         ? 'bg-[#f2e6d5] text-[#050508]'
                         : 'text-white/65 hover:text-white hover:bg-white/[0.05]'
@@ -356,28 +356,28 @@ export const AdminDashboardPage: React.FC = () => {
         {/* Main Dashboard Viewport */}
         <div className="flex-1 min-w-0 flex flex-col">
           {/* Contextual Top Header Bar */}
-          <div className="h-14 px-6 border-b border-white/[0.08] flex items-center justify-between gap-4 bg-[#07070b]">
-            <div className="flex items-center gap-2 text-xs text-white/50">
-              <span>NORVA Admin</span>
-              <span>/</span>
-              <span className="text-white font-medium capitalize">{activeTab}</span>
+          <div className="h-14 px-4 sm:px-6 border-b border-white/[0.08] flex items-center justify-between gap-3 sm:gap-4 bg-[#07070b]">
+            <div className="flex items-center gap-2 text-xs text-white/50 min-w-0">
+              <span className="shrink-0">NORVA Admin</span>
+              <span className="shrink-0">/</span>
+              <span className="text-white font-medium capitalize truncate">{activeTab}</span>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 shrink-0">
               <span className="hidden sm:inline text-xs text-white/45 font-mono-tabular">
                 {adminSession.email}
               </span>
               <button
                 type="button"
                 onClick={logoutAdmin}
-                className="lg:hidden px-3 py-1.5 rounded-lg bg-white/[0.06] text-xs text-red-300 cursor-pointer whitespace-nowrap shrink-0"
+                className="lg:hidden min-h-[36px] px-3 py-1.5 rounded-lg bg-white/[0.06] text-xs text-red-300 cursor-pointer whitespace-nowrap shrink-0"
               >
                 Sign Out
               </button>
             </div>
           </div>
 
-          <div className="p-6 sm:p-8 space-y-8">
+          <div className="p-4 sm:p-8 space-y-6 sm:space-y-8">
             {/* ===============================================================
                 TAB 1: OVERVIEW KPI GRID & RECENT ORDERS
                =============================================================== */}
@@ -562,13 +562,13 @@ export const AdminDashboardPage: React.FC = () => {
                     />
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-1.5">
+                  <div className="flex overflow-x-auto no-scrollbar sm:flex-wrap items-center gap-1.5 -mx-4 px-4 sm:mx-0 sm:px-0 pb-1 sm:pb-0">
                     {(['All', ...ORDER_STATUSES] as const).map((st) => (
                       <button
                         key={st}
                         type="button"
                         onClick={() => setOrderStatusFilter(st)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                        className={`min-h-[36px] sm:min-h-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                           orderStatusFilter === st
                             ? 'bg-[#f2e6d5] text-[#050508]'
                             : 'bg-[#0a0a0f] text-white/60 border border-white/10 hover:text-white'
@@ -581,7 +581,7 @@ export const AdminDashboardPage: React.FC = () => {
                 </div>
 
                 {filteredOrders.length === 0 ? (
-                  <div className="p-12 rounded-xl bg-[#0a0a0f] border border-white/[0.08] text-center space-y-2">
+                  <div className="p-10 sm:p-12 rounded-xl bg-[#0a0a0f] border border-white/[0.08] text-center space-y-2">
                     <Package className="w-7 h-7 text-[#d6be96] mx-auto" />
                     <p className="text-sm text-white">No matching orders found</p>
                     <p className="text-xs text-white/45">
@@ -595,11 +595,11 @@ export const AdminDashboardPage: React.FC = () => {
                       return (
                         <div
                           key={ord.orderNumber}
-                          className="p-5 sm:p-6 rounded-xl bg-[#0a0a0f] border border-white/[0.08] space-y-4"
+                          className="p-4 sm:p-6 rounded-xl bg-[#0a0a0f] border border-white/[0.08] space-y-4"
                         >
                           <div className="flex flex-wrap items-start justify-between gap-4 pb-4 border-b border-white/[0.07]">
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-3">
+                            <div className="space-y-1 min-w-0">
+                              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                                 <span className="font-mono-tabular text-sm font-semibold text-[#d6be96]">
                                   {ord.orderNumber}
                                 </span>
@@ -612,7 +612,7 @@ export const AdminDashboardPage: React.FC = () => {
                                 </span>
                                 <span className="text-xs text-white/40">{ord.createdAt}</span>
                               </div>
-                              <p className="text-xs text-white/75">
+                              <p className="text-xs text-white/75 break-words">
                                 <strong>{ord.customer.fullName}</strong> · {ord.customer.phone} ·{' '}
                                 {ord.customer.email}
                               </p>
@@ -621,14 +621,14 @@ export const AdminDashboardPage: React.FC = () => {
                               </p>
                             </div>
 
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2.5 sm:gap-3">
                               <select
                                 value={currentStatus}
                                 onChange={(e) =>
                                   updateOrderStatus(ord.orderNumber, e.target.value as OrderStatus)
                                 }
                                 aria-label={`Update status for ${ord.orderNumber}`}
-                                className="h-9 px-3 rounded-lg bg-[#050508] border border-white/15 text-xs text-white focus:outline-none focus:border-[#d6be96]"
+                                className="h-10 sm:h-9 px-3 rounded-lg bg-[#050508] border border-white/15 text-xs text-white focus:outline-none focus:border-[#d6be96]"
                               >
                                 {ORDER_STATUSES.map((st) => (
                                   <option key={st} value={st} className="bg-[#0a0a0f]">
@@ -641,7 +641,7 @@ export const AdminDashboardPage: React.FC = () => {
                                 type="button"
                                 onClick={() => deleteOrder(ord.orderNumber)}
                                 aria-label={`Delete order ${ord.orderNumber}`}
-                                className="h-9 px-2.5 rounded-lg bg-white/[0.04] hover:bg-red-500/15 text-white/50 hover:text-red-400 transition-colors cursor-pointer"
+                                className="h-10 sm:h-9 px-2.5 rounded-lg bg-white/[0.04] hover:bg-red-500/15 text-white/50 hover:text-red-400 transition-colors cursor-pointer"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>
@@ -718,34 +718,34 @@ export const AdminDashboardPage: React.FC = () => {
                     return (
                       <div
                         key={prod.id}
-                        className="p-5 rounded-xl bg-[#0a0a0f] border border-white/[0.08] grid grid-cols-1 lg:grid-cols-12 gap-5 items-center"
+                        className="p-4 sm:p-5 rounded-xl bg-[#0a0a0f] border border-white/[0.08] grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-5 items-center"
                       >
-                        <div className="lg:col-span-4 flex items-center gap-4">
+                        <div className="lg:col-span-4 flex items-center gap-3.5 sm:gap-4 min-w-0">
                           <div className="w-14 h-14 rounded-lg overflow-hidden bg-[#050508] shrink-0 border border-white/10">
                             <LuxuryImage
                               src={prod.primaryImage}
                               alt={prod.name}
-                              className="w-full h-full object-cover"
+                              className="w-full h-full object-contain sm:object-cover"
                             />
                           </div>
-                          <div>
+                          <div className="min-w-0">
                             <p className="text-[11px] font-mono-tabular text-[#d6be96]">
                               Edition {prod.numberCode} · {prod.sizes[0].sku}
                             </p>
                             <Link
                               to={`/product/${prod.slug}`}
-                              className="font-serif-display text-2xl text-white hover:text-[#d6be96]"
+                              className="font-serif-display text-xl sm:text-2xl text-white hover:text-[#d6be96] block truncate"
                             >
                               {prod.name}
                             </Link>
-                            <p className="text-xs text-white/45">{prod.keyNotesSummary}</p>
+                            <p className="text-xs text-white/45 truncate">{prod.keyNotesSummary}</p>
                           </div>
                         </div>
 
                         {/* Price Input (PKR) */}
                         <div className="lg:col-span-3 space-y-1">
                           <label className="block text-[11px] text-white/45">
-                            Price (PKR · 100 ml)
+                            Price (PKR · 50ml)
                           </label>
                           <div className="flex gap-2">
                             <input
@@ -756,7 +756,7 @@ export const AdminDashboardPage: React.FC = () => {
                               onChange={(e) =>
                                 setPriceInputs({ ...priceInputs, [prod.id]: e.target.value })
                               }
-                              className="w-full h-9 px-3 rounded-lg bg-[#050508] border border-white/15 text-xs font-mono-tabular text-white focus:outline-none focus:border-[#d6be96]"
+                              className="w-full h-10 sm:h-9 px-3 rounded-lg bg-[#050508] border border-white/15 text-xs font-mono-tabular text-white focus:outline-none focus:border-[#d6be96]"
                             />
                             <button
                               type="button"
@@ -766,7 +766,7 @@ export const AdminDashboardPage: React.FC = () => {
                                   updateProductOverride(prod.id, { price: parsed });
                                 }
                               }}
-                              className="h-9 px-3 rounded-lg bg-[#f2e6d5] hover:bg-[#d6be96] text-[#050508] text-xs font-semibold cursor-pointer shrink-0"
+                              className="h-10 sm:h-9 px-3.5 sm:px-3 rounded-lg bg-[#f2e6d5] hover:bg-[#d6be96] text-[#050508] text-xs font-semibold cursor-pointer shrink-0"
                             >
                               Save
                             </button>
@@ -793,19 +793,19 @@ export const AdminDashboardPage: React.FC = () => {
                                   });
                                 }
                               }}
-                              className="w-full h-9 px-3 rounded-lg bg-[#050508] border border-white/15 text-xs font-mono-tabular text-white focus:outline-none focus:border-[#d6be96]"
+                              className="w-full h-10 sm:h-9 px-3 rounded-lg bg-[#050508] border border-white/15 text-xs font-mono-tabular text-white focus:outline-none focus:border-[#d6be96]"
                             />
                           </div>
                         </div>
 
                         {/* Availability & Curation Toggles */}
-                        <div className="lg:col-span-3 flex flex-wrap items-center justify-end gap-2">
+                        <div className="lg:col-span-3 flex flex-wrap items-center justify-start lg:justify-end gap-2">
                           <button
                             type="button"
                             onClick={() =>
                               updateProductOverride(prod.id, { inStock: !prod.inStock })
                             }
-                            className={`h-8 px-3 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
+                            className={`min-h-[36px] sm:h-8 px-3 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
                               prod.inStock
                                 ? 'bg-[#36d67e]/12 text-[#36d67e] border-[#36d67e]/35'
                                 : 'bg-red-500/12 text-red-300 border-red-500/35'
@@ -821,7 +821,7 @@ export const AdminDashboardPage: React.FC = () => {
                                 isBestSeller: !prod.isBestSeller,
                               })
                             }
-                            className={`h-8 px-3 rounded-lg text-xs border transition-colors cursor-pointer ${
+                            className={`min-h-[36px] sm:h-8 px-3 rounded-lg text-xs border transition-colors cursor-pointer ${
                               prod.isBestSeller
                                 ? 'bg-[#d6be96]/15 text-[#d6be96] border-[#d6be96]/40'
                                 : 'bg-white/[0.03] text-white/45 border-white/10 hover:text-white'
@@ -944,7 +944,7 @@ export const AdminDashboardPage: React.FC = () => {
                   ) : (
                     <ul className="divide-y divide-white/[0.06] text-xs">
                       {subscribers.map((em) => (
-                        <li key={em} className="py-2.5 text-white/80 font-mono-tabular">
+                        <li key={em} className="py-2.5 text-white/80 font-mono-tabular break-all">
                           {em}
                         </li>
                       ))}

@@ -67,17 +67,19 @@ export const CartDrawer: React.FC = () => {
             className="relative z-10 w-full max-w-md bg-[#09090d] border-l border-white/10 h-full flex flex-col justify-between shadow-[-24px_0_64px_rgba(0,0,0,0.95)] will-change-transform"
           >
             {/* Header */}
-            <div className="p-6 border-b border-white/[0.08] bg-gradient-to-b from-[#101018] to-[#09090d]">
+            <div className="p-4 sm:p-6 border-b border-white/[0.08] bg-gradient-to-b from-[#101018] to-[#09090d]">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <ShoppingBag className="w-4 h-4 text-[#d6be96]" />
-                  <h2 className="font-serif-display text-2xl text-white">Your Shopping Bag</h2>
+                  <h2 className="font-serif-display text-xl sm:text-2xl text-white">
+                    Your Shopping Bag
+                  </h2>
                 </div>
                 <button
                   type="button"
                   onClick={closeCart}
                   aria-label="Close shopping bag"
-                  className="p-1.5 text-white/55 hover:text-white transition-colors cursor-pointer"
+                  className="w-10 h-10 -mr-2 flex items-center justify-center text-white/55 hover:text-white transition-colors cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -110,14 +112,14 @@ export const CartDrawer: React.FC = () => {
             </div>
 
             {/* Itemized List */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-5">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-5">
               {cart.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-center py-12 space-y-4">
                   <p className="font-serif-display text-2xl text-white/80">
                     Your bag is currently empty
                   </p>
                   <p className="text-xs text-white/50 max-w-xs leading-relaxed">
-                    Explore NORVA’s five signature smoked-crystal extraits — each PKR 2,500.
+                    Explore NORVA’s five signature 50ml smoked-crystal extraits — each PKR 2,500.
                   </p>
                   <button
                     type="button"
@@ -125,7 +127,7 @@ export const CartDrawer: React.FC = () => {
                       closeCart();
                       navigate('/shop');
                     }}
-                    className="mt-2 px-5 py-2.5 rounded-lg bg-[#f2e6d5] hover:bg-[#d6be96] text-[#050508] text-xs font-semibold transition-colors cursor-pointer"
+                    className="mt-2 h-11 px-5 rounded-lg bg-[#f2e6d5] hover:bg-[#d6be96] text-[#050508] text-xs font-semibold transition-colors cursor-pointer"
                   >
                     Explore Fragrances
                   </button>
@@ -134,17 +136,17 @@ export const CartDrawer: React.FC = () => {
                 cart.map((item) => (
                   <div
                     key={item.key}
-                    className="flex gap-4 pb-5 border-b border-white/[0.07]"
+                    className="flex gap-3.5 sm:gap-4 pb-4 sm:pb-5 border-b border-white/[0.07]"
                   >
                     <Link
                       to={`/product/${item.slug}`}
                       onClick={closeCart}
-                      className="w-20 h-20 rounded-lg overflow-hidden bg-[#050508] shrink-0 border border-white/12"
+                      className="w-18 h-18 sm:w-20 sm:h-20 rounded-lg overflow-hidden bg-[#050508] shrink-0 border border-white/12"
                     >
                       <LuxuryImage
                         src={item.image}
                         alt={item.name}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-contain sm:object-cover"
                       />
                     </Link>
 
@@ -161,40 +163,40 @@ export const CartDrawer: React.FC = () => {
                           type="button"
                           onClick={() => removeFromCart(item.key)}
                           aria-label={`Remove ${item.name}`}
-                          className="text-white/40 hover:text-red-400 transition-colors cursor-pointer p-1"
+                          className="w-9 h-9 -mt-1.5 -mr-1.5 flex items-center justify-center text-white/45 hover:text-red-400 transition-colors cursor-pointer shrink-0"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
 
-                      <p className="text-[11.5px] text-white/45 mt-0.5">
+                      <p className="text-[11.5px] text-white/45 mt-0.5 truncate">
                         {item.concentration} · {item.sizeLabel}
                       </p>
 
-                      <div className="mt-3 flex items-center justify-between">
+                      <div className="mt-2.5 sm:mt-3 flex items-center justify-between gap-2">
                         <div className="inline-flex items-center border border-white/15 rounded-md bg-[#050508]">
                           <button
                             type="button"
                             onClick={() => updateCartQuantity(item.key, item.quantity - 1)}
                             aria-label="Decrease quantity"
-                            className="p-1.5 text-white/70 hover:text-white cursor-pointer"
+                            className="w-9 h-8 sm:w-auto sm:h-auto sm:p-1.5 flex items-center justify-center text-white/70 hover:text-white cursor-pointer"
                           >
                             <Minus className="w-3 h-3" />
                           </button>
-                          <span className="px-2.5 text-xs font-mono-tabular text-white">
+                          <span className="px-2 sm:px-2.5 text-xs font-mono-tabular text-white">
                             {item.quantity}
                           </span>
                           <button
                             type="button"
                             onClick={() => updateCartQuantity(item.key, item.quantity + 1)}
                             aria-label="Increase quantity"
-                            className="p-1.5 text-white/70 hover:text-white cursor-pointer"
+                            className="w-9 h-8 sm:w-auto sm:h-auto sm:p-1.5 flex items-center justify-center text-white/70 hover:text-white cursor-pointer"
                           >
                             <Plus className="w-3 h-3" />
                           </button>
                         </div>
 
-                        <span className="font-mono-tabular text-sm font-medium text-white">
+                        <span className="font-mono-tabular text-sm font-medium text-white whitespace-nowrap">
                           {formatPKR(item.unitPrice * item.quantity)}
                         </span>
                       </div>
@@ -206,11 +208,11 @@ export const CartDrawer: React.FC = () => {
 
             {/* Footer */}
             {cart.length > 0 && (
-              <div className="p-6 border-t border-white/[0.08] bg-[#060609] space-y-4">
+              <div className="p-4 sm:p-6 pb-safe border-t border-white/[0.08] bg-[#060609] space-y-3 sm:space-y-4">
                 <div className="space-y-1.5 text-xs">
-                  <div className="flex justify-between text-white/60">
+                  <div className="flex justify-between gap-2 text-white/60">
                     <span>Complimentary Samples</span>
-                    <span className="text-[#d6be96]">2 × 2 ml Vials Included</span>
+                    <span className="text-[#d6be96] text-right">2 × 2 ml Vials Included</span>
                   </div>
                   <div className="flex justify-between text-base font-medium text-white pt-1">
                     <span>Subtotal</span>
@@ -235,10 +237,10 @@ export const CartDrawer: React.FC = () => {
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={closeCart}
-                  className="w-full h-11 rounded-lg bg-[#0b1610] hover:bg-[#25D366] text-[#36d67e] hover:text-[#050508] border border-[#25D366]/40 text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
+                  className="w-full h-11 px-3 rounded-lg bg-[#0b1610] hover:bg-[#25D366] text-[#36d67e] hover:text-[#050508] border border-[#25D366]/40 text-[11.5px] sm:text-xs font-semibold flex items-center justify-center gap-2 transition-colors whitespace-nowrap"
                 >
-                  <WhatsAppIcon className="w-4 h-4" />
-                  <span>Order Bag on WhatsApp · {WHATSAPP_DISPLAY}</span>
+                  <WhatsAppIcon className="w-4 h-4 shrink-0" />
+                  <span className="truncate">Order Bag on WhatsApp · {WHATSAPP_DISPLAY}</span>
                 </a>
               </div>
             )}
@@ -282,7 +284,7 @@ export const QuickViewModal: React.FC = () => {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.16 }}
-          className="fixed inset-0 z-50 bg-black/84 flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-black/84 flex items-center justify-center p-3 sm:p-4"
           onClick={closeQuickView}
         >
           <motion.div
@@ -291,14 +293,23 @@ export const QuickViewModal: React.FC = () => {
             exit={{ opacity: 0, scale: 0.97, y: 6 }}
             transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
             onClick={(e) => e.stopPropagation()}
-            className={`relative w-full max-w-3xl bg-[#0a0a0f] border border-white/12 rounded-2xl overflow-hidden grid grid-cols-1 md:grid-cols-2 will-change-[opacity,transform] ${aura.shadowClass}`}
+            className={`relative w-full max-w-3xl max-h-[90dvh] overflow-y-auto md:max-h-none md:overflow-hidden bg-[#0a0a0f] border border-white/12 rounded-2xl grid grid-cols-1 md:grid-cols-2 will-change-[opacity,transform] ${aura.shadowClass}`}
           >
             <div className="relative aspect-[4/3] md:aspect-auto md:min-h-[420px] bg-[#050508]">
-              <div className="absolute top-3 left-3 z-20 inline-flex p-0.5 rounded-lg bg-[#0b0b11]/95 border border-white/15">
+              <button
+                type="button"
+                onClick={closeQuickView}
+                aria-label="Close quick view"
+                className="md:hidden absolute top-2.5 right-2.5 z-20 w-9 h-9 rounded-full bg-[#0b0b11]/95 border border-white/15 flex items-center justify-center text-white/80 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              <div className="absolute top-2.5 left-2.5 sm:top-3 sm:left-3 z-20 inline-flex p-0.5 rounded-lg bg-[#0b0b11]/95 border border-white/15">
                 <button
                   type="button"
                   onClick={() => setPreviewMode('photo')}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
+                  className={`flex items-center gap-1 min-h-[34px] sm:min-h-0 px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
                     previewMode === 'photo'
                       ? 'bg-[#f2e6d5] text-[#050508]'
                       : 'text-white/70 hover:text-white'
@@ -310,7 +321,7 @@ export const QuickViewModal: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setPreviewMode('3d')}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
+                  className={`flex items-center gap-1 min-h-[34px] sm:min-h-0 px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
                     previewMode === '3d'
                       ? 'bg-[#f2e6d5] text-[#050508]'
                       : 'text-white/70 hover:text-white'
@@ -326,19 +337,19 @@ export const QuickViewModal: React.FC = () => {
                   label={quickViewProduct.bottle3D.label}
                   preset={quickViewProduct.bottle3D.preset}
                   fallbackImage={quickViewProduct.primaryImage}
-                  className="w-full h-full min-h-[320px] md:min-h-[420px]"
+                  className="w-full h-full min-h-[260px] sm:min-h-[320px] md:min-h-[420px]"
                 />
               ) : (
                 <LuxuryImage
                   src={quickViewProduct.primaryImage}
                   alt={quickViewProduct.name}
                   priority
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-contain md:object-cover"
                 />
               )}
             </div>
 
-            <div className="relative p-6 sm:p-8 flex flex-col justify-between space-y-5">
+            <div className="relative p-4 sm:p-8 flex flex-col justify-between space-y-4 sm:space-y-5">
               <div
                 aria-hidden="true"
                 className={`pointer-events-none absolute inset-0 opacity-70 ${aura.ambientGlow}`}
@@ -352,13 +363,13 @@ export const QuickViewModal: React.FC = () => {
                     type="button"
                     onClick={closeQuickView}
                     aria-label="Close quick view"
-                    className="p-1 text-white/50 hover:text-white cursor-pointer"
+                    className="hidden md:inline-flex p-1 text-white/50 hover:text-white cursor-pointer"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 </div>
 
-                <h3 className="font-serif-display text-3xl text-white mt-1">
+                <h3 className="font-serif-display text-2xl sm:text-3xl text-white mt-1">
                   {quickViewProduct.name}
                 </h3>
                 <p className="text-xs text-white/55 mt-2 leading-relaxed">
@@ -476,7 +487,7 @@ export const SearchModal: React.FC = () => {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.15 }}
-          className="fixed inset-0 z-50 bg-black/84 flex items-start justify-center pt-16 sm:pt-24 p-4"
+          className="fixed inset-0 z-50 bg-black/84 flex items-start justify-center pt-12 sm:pt-24 p-3 sm:p-4"
           onClick={closeSearch}
         >
           <motion.div
@@ -487,26 +498,27 @@ export const SearchModal: React.FC = () => {
             onClick={(e) => e.stopPropagation()}
             className="w-full max-w-2xl bg-[#0a0a0f] border border-white/12 rounded-2xl overflow-hidden perfume-ambient-panel will-change-[opacity,transform]"
           >
-            <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10 bg-[#0d0d14]">
+            <div className="flex items-center gap-3 px-4 sm:px-5 py-3.5 sm:py-4 border-b border-white/10 bg-[#0d0d14]">
               <Search className="w-4 h-4 text-[#d6be96] shrink-0" />
               <input
                 type="text"
                 autoFocus
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search our 5 fragrances or notes (oud, vanilla, bergamot, iris)..."
+                placeholder="Search fragrances or notes (oud, vanilla, iris)..."
                 className="w-full bg-transparent text-sm text-white placeholder:text-white/35 focus:outline-none"
               />
               <button
                 type="button"
                 onClick={closeSearch}
-                className="p-1 text-white/50 hover:text-white cursor-pointer"
+                aria-label="Close search"
+                className="w-9 h-9 -mr-1.5 flex items-center justify-center text-white/50 hover:text-white cursor-pointer shrink-0"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="max-h-[60vh] overflow-y-auto p-4 divide-y divide-white/[0.06]">
+            <div className="max-h-[65dvh] overflow-y-auto p-3 sm:p-4 divide-y divide-white/[0.06]">
               {results.length === 0 ? (
                 <div className="py-10 text-center space-y-2">
                   <p className="text-sm text-white/75">No fragrances match "{query}"</p>
@@ -527,22 +539,24 @@ export const SearchModal: React.FC = () => {
                     key={item.id}
                     to={`/product/${item.slug}`}
                     onClick={closeSearch}
-                    className="flex items-center gap-4 py-3 px-2 rounded-lg hover:bg-white/[0.04] transition-colors"
+                    className="flex items-center gap-3 sm:gap-4 py-3 px-2 rounded-lg hover:bg-white/[0.04] transition-colors"
                   >
-                    <div className="w-14 h-14 rounded-lg overflow-hidden bg-[#050508] border border-white/10 shrink-0">
+                    <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-lg overflow-hidden bg-[#050508] border border-white/10 shrink-0">
                       <LuxuryImage
                         src={item.primaryImage}
                         alt={item.name}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-contain sm:object-cover"
                       />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-serif-display text-xl text-white truncate">{item.name}</p>
+                      <p className="font-serif-display text-lg sm:text-xl text-white truncate">
+                        {item.name}
+                      </p>
                       <p className="text-xs text-white/50 truncate">
-                        {item.concentration} · {item.keyNotesSummary}
+                        {item.concentration} · {item.sizes[0].label} · {item.keyNotesSummary}
                       </p>
                     </div>
-                    <span className="font-mono-tabular text-sm text-white/85 shrink-0">
+                    <span className="font-mono-tabular text-xs sm:text-sm text-white/85 shrink-0">
                       {formatPKR(item.sizes[0].price)}
                     </span>
                   </Link>
@@ -565,7 +579,7 @@ export const ToastNotification: React.FC = () => {
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 14 }}
-          className="fixed bottom-24 right-5 z-50 px-4 py-3 rounded-xl bg-[#0b0b11] border border-[#d6be96]/40 text-xs font-medium text-white shadow-[0_18px_48px_rgba(0,0,0,0.94),0_8px_24px_rgba(214,190,150,0.18)]"
+          className="fixed bottom-20 sm:bottom-24 left-3 right-3 sm:left-auto sm:right-5 max-w-sm mx-auto sm:mx-0 z-50 px-4 py-3 rounded-xl bg-[#0b0b11] border border-[#d6be96]/40 text-xs font-medium text-white shadow-[0_18px_48px_rgba(0,0,0,0.94),0_8px_24px_rgba(214,190,150,0.18)]"
         >
           {toastMessage}
         </motion.div>

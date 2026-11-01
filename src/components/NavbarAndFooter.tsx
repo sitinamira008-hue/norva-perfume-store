@@ -24,14 +24,28 @@ export const Navbar: React.FC = () => {
     setMobileMenuOpen(false);
   }, [location.pathname]);
 
+  React.useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMobileMenuOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [mobileMenuOpen]);
+
   return (
     <header className="sticky top-0 z-40 w-full bg-[#050508]/97 border-b border-white/[0.08] shadow-[0_12px_36px_rgba(0,0,0,0.88)]">
       {/* Strictly 3-Zone Top Bar Contract (Zero backdrop-blur over WebGL for silky 60fps scroll) */}
-      <div className="max-w-[1380px] mx-auto px-4 sm:px-8 h-16 flex items-center justify-between gap-8">
+      <div className="max-w-[1380px] mx-auto px-3.5 sm:px-8 h-14 sm:h-16 flex items-center justify-between gap-2 sm:gap-6 lg:gap-8">
         {/* Zone 1: Single Brand Wordmark */}
         <Link
           to="/"
-          className="font-serif-display text-2xl sm:text-[26px] font-medium tracking-[0.14em] text-white whitespace-nowrap shrink-0"
+          className="font-serif-display text-xl min-[375px]:text-2xl sm:text-[26px] font-medium tracking-[0.12em] sm:tracking-[0.14em] text-white whitespace-nowrap shrink-0"
         >
           NORVA
         </Link>
@@ -116,12 +130,12 @@ export const Navbar: React.FC = () => {
         </nav>
 
         {/* Zone 3: Search, Account & Bag Action Cluster */}
-        <div className="flex items-center gap-3 sm:gap-4 shrink-0">
+        <div className="flex items-center gap-1 sm:gap-4 shrink-0">
           <button
             type="button"
             onClick={openSearch}
             aria-label="Search signature fragrances"
-            className="p-2 text-white/75 hover:text-white transition-colors cursor-pointer"
+            className="w-10 h-10 sm:w-auto sm:h-auto sm:p-2 flex items-center justify-center text-white/75 hover:text-white transition-colors cursor-pointer"
           >
             <Search className="w-4 h-4" />
           </button>
@@ -148,18 +162,19 @@ export const Navbar: React.FC = () => {
           <button
             type="button"
             onClick={openCart}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#101018] hover:bg-[#d6be96] border border-[#d6be96]/25 text-white hover:text-[#050508] text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 shadow-[0_8px_24px_rgba(0,0,0,0.6)]"
+            className="flex items-center gap-1.5 sm:gap-2 h-10 sm:h-auto px-2.5 sm:px-3.5 py-2 rounded-lg bg-[#101018] hover:bg-[#d6be96] border border-[#d6be96]/25 text-white hover:text-[#050508] text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 shadow-[0_8px_24px_rgba(0,0,0,0.6)]"
           >
-            <ShoppingBag className="w-3.5 h-3.5" />
-            <span>Bag</span>
+            <ShoppingBag className="w-3.5 h-3.5 shrink-0" />
+            <span className="hidden min-[360px]:inline">Bag</span>
             <span className="font-mono-tabular">({cartCount})</span>
           </button>
 
           <button
             type="button"
             onClick={() => setMobileMenuOpen((v) => !v)}
-            aria-label="Toggle navigation menu"
-            className="lg:hidden p-2 text-white/80 hover:text-white cursor-pointer"
+            aria-expanded={mobileMenuOpen}
+            aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+            className="lg:hidden w-10 h-10 flex items-center justify-center rounded-lg text-white/85 hover:text-white hover:bg-white/[0.05] cursor-pointer"
           >
             {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
@@ -169,47 +184,85 @@ export const Navbar: React.FC = () => {
       {/* Responsive Mobile Navigation Drawer */}
       <AnimatePresence>
         {mobileMenuOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-            className="lg:hidden bg-[#08080c] border-t border-white/10 px-6 py-6 space-y-5 max-h-[80vh] overflow-y-auto will-change-[opacity,transform]"
-          >
-            <div className="flex flex-col gap-3 text-sm font-medium text-white/85">
-              <Link to="/" className="py-1 hover:text-[#d6be96] transition-colors">
-                Home
-              </Link>
-              <Link to="/shop" className="py-1 hover:text-[#d6be96] transition-colors">
-                Shop All Fragrances
-              </Link>
-              <Link to="/collections/signature" className="py-1 hover:text-[#d6be96] transition-colors">
-                The Signature Five
-              </Link>
-              <Link to="/contact" className="py-1 hover:text-[#d6be96] transition-colors">
-                Client Concierge
-              </Link>
-              <Link to="/account" className="py-1 hover:text-[#d6be96] transition-colors">
-                Account &amp; Wishlist ({wishlist.length})
-              </Link>
-              <Link to="/admin" className="py-1 text-[#d6be96] hover:underline">
-                Admin Dashboard
-              </Link>
-            </div>
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.16 }}
+              onClick={() => setMobileMenuOpen(false)}
+              className="lg:hidden fixed inset-x-0 top-14 sm:top-16 bottom-0 bg-black/75 z-30"
+            />
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+              className="lg:hidden relative z-40 bg-[#08080c] border-t border-white/10 px-4 sm:px-6 py-5 space-y-5 max-h-[calc(100dvh-3.5rem)] overflow-y-auto pb-safe shadow-[0_24px_60px_rgba(0,0,0,0.95)] will-change-[opacity,transform]"
+            >
+              <nav className="flex flex-col divide-y divide-white/[0.06] text-sm font-medium text-white/90">
+                <Link
+                  to="/"
+                  className="min-h-[44px] flex items-center justify-between hover:text-[#d6be96] transition-colors"
+                >
+                  <span>Home</span>
+                  <span className="text-white/35 text-xs">→</span>
+                </Link>
+                <Link
+                  to="/shop"
+                  className="min-h-[44px] flex items-center justify-between hover:text-[#d6be96] transition-colors"
+                >
+                  <span>Shop All Fragrances</span>
+                  <span className="font-mono-tabular text-[11px] text-[#d6be96]">50ml · PKR 2,500</span>
+                </Link>
+                <Link
+                  to="/collections/signature"
+                  className="min-h-[44px] flex items-center justify-between hover:text-[#d6be96] transition-colors"
+                >
+                  <span>The Signature Five</span>
+                  <span className="text-white/35 text-xs">→</span>
+                </Link>
+                <Link
+                  to="/contact"
+                  className="min-h-[44px] flex items-center justify-between hover:text-[#d6be96] transition-colors"
+                >
+                  <span>Client Concierge</span>
+                  <span className="text-white/35 text-xs">→</span>
+                </Link>
+                <Link
+                  to="/account"
+                  className="min-h-[44px] flex items-center justify-between hover:text-[#d6be96] transition-colors"
+                >
+                  <span>Account &amp; Wishlist</span>
+                  <span className="font-mono-tabular text-xs text-white/50">({wishlist.length})</span>
+                </Link>
+                <Link
+                  to="/admin"
+                  className="min-h-[44px] flex items-center justify-between text-[#d6be96]"
+                >
+                  <span>Admin Dashboard</span>
+                  <span className="text-xs">→</span>
+                </Link>
+              </nav>
 
-            <div className="pt-4 border-t border-white/10">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-white/40 mb-3">
-                Curated Collections
-              </p>
-              <div className="grid grid-cols-2 gap-2.5 text-xs text-white/70">
-                {COLLECTION_LINKS.map((item) => (
-                  <Link key={item.to} to={item.to} className="py-1 hover:text-white transition-colors">
-                    {item.label}
-                  </Link>
-                ))}
+              <div className="pt-1">
+                <p className="text-[11px] uppercase tracking-[0.16em] text-white/40 mb-2.5">
+                  Curated Collections
+                </p>
+                <div className="grid grid-cols-2 gap-2 text-xs text-white/80">
+                  {COLLECTION_LINKS.map((item) => (
+                    <Link
+                      key={item.to}
+                      to={item.to}
+                      className="min-h-[40px] px-3 rounded-lg bg-[#0d0d14] border border-white/[0.08] flex items-center hover:text-white hover:border-[#d6be96]/40 transition-colors"
+                    >
+                      <span className="truncate">{item.label}</span>
+                    </Link>
+                  ))}
+                </div>
               </div>
-            </div>
-          </motion.div>
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
     </header>
@@ -225,21 +278,21 @@ export const Footer: React.FC = () => {
         className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-[radial-gradient(ellipse_60%_100%_at_50%_0%,rgba(214,190,150,0.07),transparent_75%)]"
       />
 
-      <div className="relative max-w-[1380px] mx-auto px-6 sm:px-8 py-16 lg:py-20">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10 lg:gap-8">
+      <div className="relative max-w-[1380px] mx-auto px-4 sm:px-8 py-12 sm:py-16 lg:py-20">
+        <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-5 gap-8 sm:gap-10 lg:gap-8">
           {/* Brand Column */}
-          <div className="lg:col-span-2 space-y-4 pr-4">
+          <div className="col-span-2 lg:col-span-2 space-y-3.5 sm:space-y-4 sm:pr-4">
             <Link
               to="/"
               className="inline-block font-serif-display text-2xl tracking-[0.14em] text-white"
             >
               NORVA
             </Link>
-            <p className="text-sm text-white/55 max-w-sm leading-relaxed">
-              Five signature haute parfumerie creations bottled in thick smoked optical crystal.
+            <p className="text-xs sm:text-sm text-white/55 max-w-sm leading-relaxed">
+              Five signature 50ml haute parfumerie creations bottled in thick smoked optical crystal.
               Every flacon honors rare botanical resins, noble woods, and enduring sillage.
             </p>
-            <p className="text-xs text-white/40 pt-2">
+            <p className="text-xs text-white/40 pt-1 sm:pt-2">
               NORVA Haute Parfumerie · Nationwide Insured Delivery Across Pakistan
             </p>
           </div>
@@ -318,7 +371,7 @@ export const Footer: React.FC = () => {
           </div>
 
           {/* Client Concierge */}
-          <div className="space-y-3">
+          <div className="col-span-2 md:col-span-1 space-y-3">
             <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-white/85">
               Client Concierge
             </h3>
@@ -362,14 +415,14 @@ export const Footer: React.FC = () => {
           </div>
         </div>
 
-        <div className="mt-14 pt-8 border-t border-white/[0.06] flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-white/40">
+        <div className="mt-10 sm:mt-14 pt-6 sm:pt-8 pb-16 sm:pb-0 border-t border-white/[0.06] flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-white/40 text-center sm:text-left">
           <p>© {new Date().getFullYear()} NORVA Haute Parfumerie. All rights reserved.</p>
-          <div className="flex items-center gap-6">
+          <div className="flex flex-wrap items-center justify-center gap-5 sm:gap-6">
             <a
               href="https://instagram.com"
               target="_blank"
               rel="noreferrer"
-              className="hover:text-white transition-colors"
+              className="py-1 hover:text-white transition-colors"
             >
               Instagram
             </a>
@@ -377,11 +430,11 @@ export const Footer: React.FC = () => {
               href="https://pinterest.com"
               target="_blank"
               rel="noreferrer"
-              className="hover:text-white transition-colors"
+              className="py-1 hover:text-white transition-colors"
             >
               Pinterest
             </a>
-            <Link to="/contact" className="hover:text-white transition-colors">
+            <Link to="/contact" className="py-1 hover:text-white transition-colors">
               Shipping &amp; Returns
             </Link>
           </div>

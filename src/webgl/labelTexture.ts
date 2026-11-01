@@ -18,7 +18,7 @@ export const DEFAULT_HERO_BOTTLE_LABEL: BottleLabelContent = {
   titleLine2: 'Qawa',
   notesLine: 'Oud · Smoked Leather · Black Amber · Saffron',
   concentration: 'EXTRAIT DE PARFUM',
-  volume: '100 ML',
+  volume: '50 ML',
   editionCode: 'N° 01 · GRASSE',
 };
 
@@ -250,7 +250,7 @@ export function drawBottleLabelToCanvas(
  */
 export function createRearBottleLabelTexture(
   maxAnisotropy: number,
-  volume = '100 ML',
+  volume = '50 ML',
 ): THREE.CanvasTexture {
   const cached = _rearLabelCache.get(volume);
   if (cached) {

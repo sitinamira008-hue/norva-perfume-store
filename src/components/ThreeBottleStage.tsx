@@ -166,7 +166,7 @@ export const ThreeBottleStage: React.FC<ThreeBottleStageProps> = React.memo(
               src={fallbackImage}
               alt={`${label.titleLine1} ${label.titleLine2 ?? ''} perfume bottle`}
               referrerPolicy="no-referrer"
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain sm:object-cover"
             />
           ) : (
             <div className="text-center p-8">
@@ -199,15 +199,15 @@ export const ThreeBottleStage: React.FC<ThreeBottleStageProps> = React.memo(
 
         {/* Discreet interactive 3D stage controls at bottom center (no backdrop-blur over WebGL) */}
         {showControls && (
-          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#0b0b10]/96 border border-white/12 shadow-[0_12px_32px_rgba(0,0,0,0.85)]">
+          <div className="absolute bottom-2.5 sm:bottom-3 left-1/2 -translate-x-1/2 z-10 max-w-[calc(100%-1.25rem)] flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-[#0b0b10]/96 border border-white/12 shadow-[0_12px_32px_rgba(0,0,0,0.85)]">
             <button
               type="button"
               onClick={toggleSpin}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[11.5px] font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+              className={`flex items-center gap-1.5 min-h-[36px] sm:min-h-0 px-2.5 py-1 rounded text-[11px] sm:text-[11.5px] font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                 autoSpin ? 'bg-[#d6be96] text-[#050508]' : 'text-white/75 hover:text-white'
               }`}
             >
-              <RotateCw className="w-3.5 h-3.5" />
+              <RotateCw className="w-3.5 h-3.5 shrink-0" />
               <span>{autoSpin ? '360° Active' : '360° Orbit'}</span>
             </button>
 
@@ -218,14 +218,17 @@ export const ThreeBottleStage: React.FC<ThreeBottleStageProps> = React.memo(
             <button
               type="button"
               onClick={toggleExplode}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[11.5px] font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+              className={`flex items-center gap-1.5 min-h-[36px] sm:min-h-0 px-2.5 py-1 rounded text-[11px] sm:text-[11.5px] font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                 isExploded
                   ? 'bg-[#d6be96]/18 text-[#d6be96]'
                   : 'text-white/75 hover:text-[#d6be96]'
               }`}
             >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>{isExploded ? 'Reassemble Flacon' : 'Deconstruct Flacon'}</span>
+              <Sparkles className="w-3.5 h-3.5 shrink-0" />
+              <span className="sm:hidden">{isExploded ? 'Reassemble' : 'Deconstruct'}</span>
+              <span className="hidden sm:inline">
+                {isExploded ? 'Reassemble Flacon' : 'Deconstruct Flacon'}
+              </span>
             </button>
           </div>
         )}

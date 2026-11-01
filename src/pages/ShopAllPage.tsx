@@ -75,35 +75,35 @@ export const ShopAllPage: React.FC = () => {
   return (
     <div className="bg-transparent text-[#f5f3ef] min-h-screen">
       <SEOHead
-        title="Shop All 5 Signature Fragrances — PKR 2,500"
-        description="Explore NORVA’s five signature extraits de parfum in smoked-glass 100 ml flacons — Khamrah Qawa, Cool Water, 9mM Rebel, Jadora, and Gucci Flora at PKR 2,500."
+        title="Shop All 5 Signature Fragrances — 50ml · PKR 2,500"
+        description="Explore NORVA’s five signature extraits de parfum in smoked-glass 50ml flacons — Khamrah Qawa, Cool Water, 9mM Rebel, Jadora, and Gucci Flora at PKR 2,500."
       />
 
       {/* Header */}
-      <section className="relative overflow-hidden border-b border-white/[0.08] py-14 sm:py-20 bg-[#050508]">
+      <section className="relative overflow-hidden border-b border-white/[0.08] py-10 sm:py-20 bg-[#050508]">
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_62%_75%_at_75%_30%,rgba(214,190,150,0.11),rgba(138,92,226,0.06)_50%,transparent_76%)]"
         />
-        <div className="relative max-w-[1380px] mx-auto px-4 sm:px-8 space-y-4">
-          <p className="text-xs font-medium uppercase tracking-[0.22em] text-[#d6be96]">
-            NORVA Signature Catalog · PKR 2,500
+        <div className="relative max-w-[1380px] mx-auto px-3.5 sm:px-8 space-y-3 sm:space-y-4">
+          <p className="text-[11px] sm:text-xs font-medium uppercase tracking-[0.2em] sm:tracking-[0.22em] text-[#d6be96]">
+            NORVA Signature Catalog · 50ml · PKR 2,500
           </p>
-          <h1 className="font-serif-display text-5xl sm:text-6xl font-medium text-white leading-[1.02]">
+          <h1 className="font-serif-display text-3xl min-[375px]:text-4xl sm:text-6xl font-medium text-white leading-[1.04] sm:leading-[1.02]">
             The Five Fragrances
           </h1>
           <p className="text-sm sm:text-base text-white/60 max-w-2xl leading-relaxed">
-            Five curated haute parfumerie compositions in 100 ml smoked optical glass—each priced at
+            Five curated haute parfumerie compositions in 50ml smoked optical glass—each priced at
             PKR 2,500.
           </p>
         </div>
       </section>
 
       {/* Interactive Filter & Search Controls */}
-      <section className="py-12">
-        <div className="max-w-[1380px] mx-auto px-4 sm:px-8 space-y-8">
+      <section className="py-8 sm:py-12">
+        <div className="max-w-[1380px] mx-auto px-3.5 sm:px-8 space-y-6 sm:space-y-8">
           {/* Category Tabs */}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex overflow-x-auto no-scrollbar sm:flex-wrap items-center gap-2 -mx-3.5 px-3.5 sm:mx-0 sm:px-0 pb-1 sm:pb-0">
             {CATEGORY_TABS.map((cat) => {
               const active = activeCategory === cat.id;
               return (
@@ -111,7 +111,7 @@ export const ShopAllPage: React.FC = () => {
                   key={cat.id}
                   type="button"
                   onClick={() => setActiveCategory(cat.id)}
-                  className={`h-10 px-4 rounded-lg text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                  className={`h-10 px-3.5 sm:px-4 rounded-lg text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                     active
                       ? 'bg-[#f2e6d5] text-[#050508]'
                       : 'bg-[#0a0a0f] text-white/65 border border-white/10 hover:text-white hover:border-[#d6be96]/35'
@@ -124,7 +124,7 @@ export const ShopAllPage: React.FC = () => {
           </div>
 
           {/* Search + Olfactory Family + Price + Sort Toolbar */}
-          <div className="p-5 rounded-xl bg-[#0a0a0f] border border-white/10 perfume-ambient-panel grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-5 items-end">
+          <div className="p-4 sm:p-5 rounded-xl bg-[#0a0a0f] border border-white/10 perfume-ambient-panel grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-4 sm:gap-5 items-end">
             {/* Search Input */}
             <div className="lg:col-span-4 space-y-1.5">
               <label className="block text-[11px] uppercase tracking-[0.16em] text-white/45">
@@ -173,7 +173,7 @@ export const ShopAllPage: React.FC = () => {
                 step={250}
                 value={maxPrice}
                 onChange={(e) => setMaxPrice(Number(e.target.value))}
-                className="w-full h-2 cursor-pointer"
+                className="w-full h-6 sm:h-2 cursor-pointer"
               />
             </div>
 
@@ -201,9 +201,9 @@ export const ShopAllPage: React.FC = () => {
           </div>
 
           {/* Results Count & Active Reset */}
-          <div className="flex items-center justify-between text-xs text-white/50">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-white/50">
             <div className="flex items-center gap-2">
-              <SlidersHorizontal className="w-3.5 h-3.5 text-[#d6be96]" />
+              <SlidersHorizontal className="w-3.5 h-3.5 text-[#d6be96] shrink-0" />
               <span>
                 Showing{' '}
                 <strong className="text-white font-mono-tabular">{filteredProducts.length}</strong>{' '}
@@ -218,7 +218,7 @@ export const ShopAllPage: React.FC = () => {
               <button
                 type="button"
                 onClick={resetFilters}
-                className="inline-flex items-center gap-1.5 text-[#d6be96] hover:underline cursor-pointer"
+                className="min-h-[36px] sm:min-h-0 inline-flex items-center gap-1.5 text-[#d6be96] hover:underline cursor-pointer"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 <span>Reset Filters</span>
@@ -228,12 +228,12 @@ export const ShopAllPage: React.FC = () => {
 
           {/* Product Grid or Clean Empty State */}
           {filteredProducts.length === 0 ? (
-            <div className="py-20 text-center rounded-2xl bg-[#0a0a0f] border border-white/10 perfume-ambient-panel space-y-4">
-              <p className="font-serif-display text-3xl text-white">
+            <div className="py-12 sm:py-20 px-4 text-center rounded-2xl bg-[#0a0a0f] border border-white/10 perfume-ambient-panel space-y-4">
+              <p className="font-serif-display text-2xl sm:text-3xl text-white">
                 No Fragrances Match Your Current Selection
               </p>
               <p className="text-sm text-white/55 max-w-md mx-auto">
-                All five NORVA signature 100 ml flacons are priced at PKR 2,500. Reset filters to
+                All five NORVA signature 50ml flacons are priced at PKR 2,500. Reset filters to
                 view the full collection.
               </p>
               <button
@@ -245,7 +245,7 @@ export const ShopAllPage: React.FC = () => {
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-7">
+            <div className="grid grid-cols-1 min-[360px]:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-6 lg:gap-7">
               {filteredProducts.map((product, idx) => (
                 <ProductCard key={product.id} product={product} index={idx} />
               ))}

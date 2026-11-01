@@ -116,13 +116,13 @@ export const CheckoutPage: React.FC = () => {
   // =========================================================================
   if (completedOrder) {
     return (
-      <div className="bg-transparent text-[#f5f3ef] py-16 sm:py-24">
+      <div className="bg-transparent text-[#f5f3ef] py-10 sm:py-24">
         <SEOHead
           title={`Order Confirmed ${completedOrder.orderNumber}`}
           description="Your NORVA order confirmation."
         />
-        <div className="max-w-3xl mx-auto px-4 sm:px-8">
-          <div className="p-8 sm:p-12 rounded-2xl bg-[#0a0a0f] border border-[#36d67e]/35 space-y-8">
+        <div className="max-w-3xl mx-auto px-3.5 sm:px-8">
+          <div className="p-5 sm:p-12 rounded-2xl bg-[#0a0a0f] border border-[#36d67e]/35 space-y-6 sm:space-y-8">
             <div className="space-y-3">
               <div className="w-12 h-12 rounded-full bg-[#36d67e]/15 border border-[#36d67e]/40 flex items-center justify-center text-[#36d67e]">
                 <Check className="w-6 h-6" />
@@ -130,7 +130,7 @@ export const CheckoutPage: React.FC = () => {
               <p className="text-xs font-medium uppercase tracking-[0.2em] text-[#36d67e]">
                 NORVA Order Confirmed
               </p>
-              <h1 className="font-serif-display text-4xl sm:text-5xl text-white">
+              <h1 className="font-serif-display text-3xl sm:text-5xl text-white">
                 Thank You, {completedOrder.customer.fullName}
               </h1>
               <p className="text-sm text-white/65 leading-relaxed">
@@ -142,7 +142,7 @@ export const CheckoutPage: React.FC = () => {
               </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 py-6 border-y border-white/[0.08] text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 sm:gap-6 py-5 sm:py-6 border-y border-white/[0.08] text-xs">
               <div className="space-y-1.5">
                 <p className="uppercase tracking-[0.15em] text-white/45">Delivery Destination</p>
                 <p className="text-white font-medium">{completedOrder.customer.fullName}</p>
@@ -179,23 +179,23 @@ export const CheckoutPage: React.FC = () => {
             {/* Itemized Receipt */}
             <div className="space-y-4">
               {completedOrder.items.map((item) => (
-                <div key={item.key} className="flex items-center justify-between gap-4 text-sm">
-                  <div className="flex items-center gap-3">
+                <div key={item.key} className="flex items-center justify-between gap-3 sm:gap-4 text-sm">
+                  <div className="flex items-center gap-3 min-w-0">
                     <div className="w-12 h-12 rounded-lg overflow-hidden bg-[#050508] shrink-0">
                       <LuxuryImage
                         src={item.image}
                         alt={item.name}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-contain sm:object-cover"
                       />
                     </div>
-                    <div>
-                      <p className="font-serif-display text-lg text-white">{item.name}</p>
+                    <div className="min-w-0">
+                      <p className="font-serif-display text-lg text-white truncate">{item.name}</p>
                       <p className="text-xs text-white/50">
                         {item.sizeLabel} × {item.quantity}
                       </p>
                     </div>
                   </div>
-                  <span className="font-mono-tabular text-white">
+                  <span className="font-mono-tabular text-white shrink-0">
                     {formatPKR(item.unitPrice * item.quantity)}
                   </span>
                 </div>
@@ -231,17 +231,17 @@ export const CheckoutPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-4 pt-2">
+            <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3 sm:gap-4 pt-2">
               <Link
                 to="/account"
-                className="h-11 px-6 rounded-lg bg-[#f2e6d5] hover:bg-[#d6be96] text-[#050508] text-xs font-semibold uppercase tracking-[0.14em] inline-flex items-center gap-2 transition-colors"
+                className="h-11 px-6 rounded-lg bg-[#f2e6d5] hover:bg-[#d6be96] text-[#050508] text-xs font-semibold uppercase tracking-[0.14em] inline-flex items-center justify-center gap-2 transition-colors"
               >
                 <span>View Order in Account</span>
                 <ArrowRight className="w-4 h-4" />
               </Link>
               <Link
                 to="/shop"
-                className="h-11 px-6 rounded-lg border border-white/15 text-xs font-medium uppercase tracking-[0.14em] text-white inline-flex items-center"
+                className="h-11 px-6 rounded-lg border border-white/15 text-xs font-medium uppercase tracking-[0.14em] text-white inline-flex items-center justify-center"
               >
                 Continue Exploring
               </Link>
@@ -260,12 +260,12 @@ export const CheckoutPage: React.FC = () => {
       <div className="min-h-[70vh] flex flex-col items-center justify-center px-4 text-center space-y-5">
         <SEOHead title="Checkout" description="Complete your NORVA order." />
         <ShoppingBag className="w-10 h-10 text-[#d6be96]" />
-        <h1 className="font-serif-display text-4xl sm:text-5xl text-white">
+        <h1 className="font-serif-display text-3xl sm:text-5xl text-white">
           Your Shopping Bag is Empty
         </h1>
         <p className="text-sm text-white/60 max-w-md">
-          Explore NORVA’s five signature smoked-glass fragrances (PKR 2,500 each) before proceeding
-          to checkout.
+          Explore NORVA’s five signature 50ml smoked-glass fragrances (PKR 2,500 each) before
+          proceeding to checkout.
         </p>
         <Link
           to="/shop"
@@ -279,23 +279,23 @@ export const CheckoutPage: React.FC = () => {
   }
 
   return (
-    <div className="bg-transparent text-[#f5f3ef] py-12 lg:py-16">
+    <div className="bg-transparent text-[#f5f3ef] py-8 sm:py-12 lg:py-16">
       <SEOHead title="Checkout" description="Complete your NORVA order." />
 
-      <div className="max-w-[1380px] mx-auto px-4 sm:px-8 space-y-10">
+      <div className="max-w-[1380px] mx-auto px-3.5 sm:px-8 space-y-7 sm:space-y-10">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.2em] text-[#d6be96]">
+          <p className="text-[11px] sm:text-xs font-medium uppercase tracking-[0.2em] text-[#d6be96]">
             NORVA Dispatch
           </p>
-          <h1 className="font-serif-display text-4xl sm:text-5xl text-white mt-1">Checkout</h1>
+          <h1 className="font-serif-display text-3xl sm:text-5xl text-white mt-1">Checkout</h1>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-7 sm:gap-10 items-start">
           {/* Left Form: Shipping, Courier & Settlement */}
-          <form onSubmit={handlePlaceOrder} className="lg:col-span-7 space-y-8">
+          <form onSubmit={handlePlaceOrder} className="lg:col-span-7 space-y-6 sm:space-y-8">
             {/* 1. Client & Shipping Information */}
-            <div className="p-6 sm:p-8 rounded-2xl bg-[#0a0a0f] border border-white/[0.08] space-y-5">
-              <h2 className="font-serif-display text-2xl text-white">
+            <div className="p-4 sm:p-8 rounded-2xl bg-[#0a0a0f] border border-white/[0.08] space-y-4 sm:space-y-5">
+              <h2 className="font-serif-display text-xl sm:text-2xl text-white">
                 1. Recipient &amp; Shipping Address
               </h2>
 
@@ -385,24 +385,24 @@ export const CheckoutPage: React.FC = () => {
             </div>
 
             {/* 2. Courier Speed & Gift Note */}
-            <div className="p-6 sm:p-8 rounded-2xl bg-[#0a0a0f] border border-white/[0.08] space-y-5">
-              <h2 className="font-serif-display text-2xl text-white">
+            <div className="p-4 sm:p-8 rounded-2xl bg-[#0a0a0f] border border-white/[0.08] space-y-4 sm:space-y-5">
+              <h2 className="font-serif-display text-xl sm:text-2xl text-white">
                 2. Courier Method &amp; Gift Note
               </h2>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-3.5">
                 <button
                   type="button"
                   onClick={() => setShippingSpeed('standard')}
-                  className={`p-4 rounded-xl border text-left transition-colors cursor-pointer ${
+                  className={`p-3.5 sm:p-4 rounded-xl border text-left transition-colors cursor-pointer ${
                     shippingSpeed === 'standard'
                       ? 'bg-[#12121b] border-[#d6be96]'
                       : 'bg-[#06060a] border-white/12'
                   }`}
                 >
-                  <div className="flex items-center justify-between text-xs font-semibold text-white">
+                  <div className="flex items-center justify-between gap-2 text-xs font-semibold text-white">
                     <span>Standard Insured Courier</span>
-                    <span className="font-mono-tabular text-[#d6be96]">
+                    <span className="font-mono-tabular text-[#d6be96] shrink-0">
                       {cartSubtotal >= 5000 ? 'Complimentary' : 'PKR 250'}
                     </span>
                   </div>
@@ -412,15 +412,15 @@ export const CheckoutPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setShippingSpeed('express')}
-                  className={`p-4 rounded-xl border text-left transition-colors cursor-pointer ${
+                  className={`p-3.5 sm:p-4 rounded-xl border text-left transition-colors cursor-pointer ${
                     shippingSpeed === 'express'
                       ? 'bg-[#12121b] border-[#d6be96]'
                       : 'bg-[#06060a] border-white/12'
                   }`}
                 >
-                  <div className="flex items-center justify-between text-xs font-semibold text-white">
+                  <div className="flex items-center justify-between gap-2 text-xs font-semibold text-white">
                     <span>Priority Overnight Air</span>
-                    <span className="font-mono-tabular text-[#d6be96]">PKR 500</span>
+                    <span className="font-mono-tabular text-[#d6be96] shrink-0">PKR 500</span>
                   </div>
                   <p className="text-xs text-white/50 mt-1">1–2 working days priority dispatch</p>
                 </button>
@@ -441,25 +441,27 @@ export const CheckoutPage: React.FC = () => {
             </div>
 
             {/* 3. Honest Payment Method */}
-            <div className="p-6 sm:p-8 rounded-2xl bg-[#0a0a0f] border border-white/[0.08] space-y-5">
-              <h2 className="font-serif-display text-2xl text-white">3. Payment Method</h2>
+            <div className="p-4 sm:p-8 rounded-2xl bg-[#0a0a0f] border border-white/[0.08] space-y-4 sm:space-y-5">
+              <h2 className="font-serif-display text-xl sm:text-2xl text-white">
+                3. Payment Method
+              </h2>
 
               <div className="space-y-3">
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('cod')}
-                  className={`w-full p-4 rounded-xl border text-left transition-colors cursor-pointer ${
+                  className={`w-full p-3.5 sm:p-4 rounded-xl border text-left transition-colors cursor-pointer ${
                     paymentMethod === 'cod'
                       ? 'bg-[#12121b] border-[#36d67e]'
                       : 'bg-[#06060a] border-white/12'
                   }`}
                 >
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2">
                     <span className="text-sm font-medium text-white">
                       Cash on Delivery (COD)
                     </span>
                     <span
-                      className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                      className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
                         paymentMethod === 'cod' ? 'border-[#36d67e]' : 'border-white/30'
                       }`}
                     >
@@ -476,18 +478,18 @@ export const CheckoutPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('invoice')}
-                  className={`w-full p-4 rounded-xl border text-left transition-colors cursor-pointer ${
+                  className={`w-full p-3.5 sm:p-4 rounded-xl border text-left transition-colors cursor-pointer ${
                     paymentMethod === 'invoice'
                       ? 'bg-[#12121b] border-[#36d67e]'
                       : 'bg-[#06060a] border-white/12'
                   }`}
                 >
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2">
                     <span className="text-sm font-medium text-white">
                       Bank Transfer / Online IBFT Invoice
                     </span>
                     <span
-                      className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                      className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
                         paymentMethod === 'invoice' ? 'border-[#36d67e]' : 'border-white/30'
                       }`}
                     >
@@ -505,7 +507,7 @@ export const CheckoutPage: React.FC = () => {
 
               <button
                 type="submit"
-                className="w-full h-13 py-3.5 px-6 rounded-xl bg-[#f2e6d5] hover:bg-[#d6be96] text-[#050508] text-xs font-semibold uppercase tracking-[0.16em] transition-colors cursor-pointer"
+                className="w-full min-h-[48px] py-3.5 px-4 sm:px-6 rounded-xl bg-[#f2e6d5] hover:bg-[#d6be96] text-[#050508] text-[11.5px] sm:text-xs font-semibold uppercase tracking-[0.11em] sm:tracking-[0.16em] transition-colors cursor-pointer"
               >
                 Confirm Order · {formatPKR(finalTotal)}
               </button>
@@ -513,8 +515,8 @@ export const CheckoutPage: React.FC = () => {
           </form>
 
           {/* Right Sticky Order Summary & Privilege Coupon */}
-          <aside className="lg:col-span-5 lg:sticky lg:top-24 p-6 sm:p-8 rounded-2xl bg-[#0a0a0f] border border-white/[0.08] space-y-6">
-            <h2 className="font-serif-display text-2xl text-white">Order Summary</h2>
+          <aside className="lg:col-span-5 lg:sticky lg:top-24 p-4 sm:p-8 rounded-2xl bg-[#0a0a0f] border border-white/[0.08] space-y-5 sm:space-y-6">
+            <h2 className="font-serif-display text-xl sm:text-2xl text-white">Order Summary</h2>
 
             <div className="space-y-4 max-h-[360px] overflow-y-auto pr-1">
               {cart.map((item) => (
@@ -522,37 +524,39 @@ export const CheckoutPage: React.FC = () => {
                   key={item.key}
                   className="flex items-start justify-between gap-3 pb-4 border-b border-white/[0.06]"
                 >
-                  <div className="flex items-start gap-3">
-                    <div className="w-16 h-16 rounded-lg overflow-hidden bg-[#050508] shrink-0">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-lg overflow-hidden bg-[#050508] shrink-0">
                       <LuxuryImage
                         src={item.image}
                         alt={item.name}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-contain sm:object-cover"
                       />
                     </div>
-                    <div className="space-y-1">
+                    <div className="space-y-1 min-w-0">
                       <Link
                         to={`/product/${item.slug}`}
-                        className="font-serif-display text-lg text-white hover:text-[#d6be96]"
+                        className="font-serif-display text-lg text-white hover:text-[#d6be96] block truncate"
                       >
                         {item.name}
                       </Link>
                       <p className="text-xs text-white/50">{item.sizeLabel}</p>
-                      <div className="flex items-center gap-2 pt-1">
+                      <div className="flex items-center gap-1.5 sm:gap-2 pt-1">
                         <button
                           type="button"
                           onClick={() => updateCartQuantity(item.key, item.quantity - 1)}
-                          className="w-6 h-6 rounded bg-white/[0.06] flex items-center justify-center text-white/70 hover:text-white cursor-pointer"
+                          aria-label="Decrease quantity"
+                          className="w-8 h-8 sm:w-6 sm:h-6 rounded bg-white/[0.06] flex items-center justify-center text-white/70 hover:text-white cursor-pointer"
                         >
                           <Minus className="w-3 h-3" />
                         </button>
-                        <span className="font-mono-tabular text-xs text-white w-4 text-center">
+                        <span className="font-mono-tabular text-xs text-white w-5 text-center">
                           {item.quantity}
                         </span>
                         <button
                           type="button"
                           onClick={() => updateCartQuantity(item.key, item.quantity + 1)}
-                          className="w-6 h-6 rounded bg-white/[0.06] flex items-center justify-center text-white/70 hover:text-white cursor-pointer"
+                          aria-label="Increase quantity"
+                          className="w-8 h-8 sm:w-6 sm:h-6 rounded bg-white/[0.06] flex items-center justify-center text-white/70 hover:text-white cursor-pointer"
                         >
                           <Plus className="w-3 h-3" />
                         </button>
@@ -560,7 +564,7 @@ export const CheckoutPage: React.FC = () => {
                           type="button"
                           onClick={() => removeFromCart(item.key)}
                           aria-label="Remove item"
-                          className="ml-2 text-white/40 hover:text-red-400 cursor-pointer"
+                          className="ml-1 sm:ml-2 w-8 h-8 sm:w-auto sm:h-auto flex items-center justify-center text-white/40 hover:text-red-400 cursor-pointer"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -587,11 +591,11 @@ export const CheckoutPage: React.FC = () => {
                   value={couponInput}
                   onChange={(e) => setCouponInput(e.target.value)}
                   placeholder="NORVA15"
-                  className="flex-1 h-10 px-3 rounded-lg bg-[#050508] border border-white/15 text-xs font-mono-tabular uppercase text-white focus:outline-none focus:border-[#d6be96]"
+                  className="flex-1 min-w-0 h-11 sm:h-10 px-3 rounded-lg bg-[#050508] border border-white/15 text-xs font-mono-tabular uppercase text-white focus:outline-none focus:border-[#d6be96]"
                 />
                 <button
                   type="submit"
-                  className="h-10 px-4 rounded-lg bg-white/[0.08] hover:bg-white/[0.15] text-xs font-medium text-white cursor-pointer"
+                  className="h-11 sm:h-10 px-4 rounded-lg bg-white/[0.08] hover:bg-white/[0.15] text-xs font-medium text-white cursor-pointer shrink-0"
                 >
                   Apply
                 </button>
@@ -666,60 +670,60 @@ export const AccountPage: React.FC = () => {
   };
 
   return (
-    <div className="bg-transparent text-[#f5f3ef] min-h-[80vh] py-14 lg:py-20">
+    <div className="bg-transparent text-[#f5f3ef] min-h-[80vh] py-8 sm:py-14 lg:py-20">
       <SEOHead
         title="Client Account, Orders & Wishlist"
         description="Manage your NORVA saved fragrances, order archive, and delivery preferences."
       />
 
-      <div className="max-w-[1380px] mx-auto px-4 sm:px-8 space-y-10">
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-8 border-b border-white/[0.08]">
-          <div className="space-y-2">
-            <p className="text-xs font-medium uppercase tracking-[0.2em] text-[#d6be96]">
+      <div className="max-w-[1380px] mx-auto px-3.5 sm:px-8 space-y-7 sm:space-y-10">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-5 sm:gap-6 pb-6 sm:pb-8 border-b border-white/[0.08]">
+          <div className="space-y-1.5 sm:space-y-2">
+            <p className="text-[11px] sm:text-xs font-medium uppercase tracking-[0.2em] text-[#d6be96]">
               NORVA Client Suite
             </p>
-            <h1 className="font-serif-display text-4xl sm:text-5xl text-white">
+            <h1 className="font-serif-display text-3xl sm:text-5xl text-white">
               {profile.fullName ? `Welcome, ${profile.fullName}` : 'Your NORVA Account'}
             </h1>
           </div>
 
-          <div className="inline-flex p-1 rounded-xl bg-[#0a0a0f] border border-white/10 self-start">
+          <div className="w-full sm:w-auto grid grid-cols-3 sm:inline-flex p-1 rounded-xl bg-[#0a0a0f] border border-white/10 self-start">
             <button
               type="button"
               onClick={() => setTab('wishlist')}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+              className={`inline-flex items-center justify-center gap-1.5 sm:gap-2 min-h-[42px] sm:min-h-0 px-2 sm:px-4 py-2 rounded-lg text-[11px] sm:text-xs font-medium transition-colors cursor-pointer whitespace-nowrap ${
                 tab === 'wishlist'
                   ? 'bg-[#f2e6d5] text-[#050508]'
                   : 'text-white/65 hover:text-white'
               }`}
             >
-              <Heart className="w-3.5 h-3.5" />
+              <Heart className="w-3.5 h-3.5 shrink-0" />
               <span>Wishlist ({wishedProducts.length})</span>
             </button>
 
             <button
               type="button"
               onClick={() => setTab('orders')}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+              className={`inline-flex items-center justify-center gap-1.5 sm:gap-2 min-h-[42px] sm:min-h-0 px-2 sm:px-4 py-2 rounded-lg text-[11px] sm:text-xs font-medium transition-colors cursor-pointer whitespace-nowrap ${
                 tab === 'orders'
                   ? 'bg-[#f2e6d5] text-[#050508]'
                   : 'text-white/65 hover:text-white'
               }`}
             >
-              <Package className="w-3.5 h-3.5" />
+              <Package className="w-3.5 h-3.5 shrink-0" />
               <span>Orders ({orders.length})</span>
             </button>
 
             <button
               type="button"
               onClick={() => setTab('profile')}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+              className={`inline-flex items-center justify-center gap-1.5 sm:gap-2 min-h-[42px] sm:min-h-0 px-2 sm:px-4 py-2 rounded-lg text-[11px] sm:text-xs font-medium transition-colors cursor-pointer whitespace-nowrap ${
                 tab === 'profile'
                   ? 'bg-[#f2e6d5] text-[#050508]'
                   : 'text-white/65 hover:text-white'
               }`}
             >
-              <User className="w-3.5 h-3.5" />
+              <User className="w-3.5 h-3.5 shrink-0" />
               <span>Profile</span>
             </button>
           </div>
@@ -729,13 +733,13 @@ export const AccountPage: React.FC = () => {
         {tab === 'wishlist' && (
           <div className="space-y-6">
             {wishedProducts.length === 0 ? (
-              <div className="p-14 rounded-2xl bg-[#0a0a0f] border border-white/[0.07] text-center space-y-4">
+              <div className="p-7 sm:p-14 rounded-2xl bg-[#0a0a0f] border border-white/[0.07] text-center space-y-4">
                 <Heart className="w-8 h-8 text-[#d6be96] mx-auto" />
-                <h2 className="font-serif-display text-3xl text-white">
+                <h2 className="font-serif-display text-2xl sm:text-3xl text-white">
                   Your Olfactory Wardrobe is Empty
                 </h2>
                 <p className="text-sm text-white/55 max-w-md mx-auto">
-                  Tap the heart icon on any of our five signature flacons to save it to your
+                  Tap the heart icon on any of our five signature 50ml flacons to save it to your
                   wishlist.
                 </p>
                 <Link
@@ -747,7 +751,7 @@ export const AccountPage: React.FC = () => {
                 </Link>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-7">
+              <div className="grid grid-cols-1 min-[380px]:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-7">
                 {wishedProducts.map((product) => {
                   const sz = product.sizes[0];
                   return (
@@ -755,21 +759,24 @@ export const AccountPage: React.FC = () => {
                       key={product.id}
                       className="rounded-xl bg-[#0a0a0f] border border-white/[0.08] overflow-hidden flex flex-col justify-between"
                     >
-                      <Link to={`/product/${product.slug}`} className="aspect-[4/3] block bg-[#050508]">
+                      <Link
+                        to={`/product/${product.slug}`}
+                        className="aspect-[4/3] block bg-[#050508]"
+                      >
                         <LuxuryImage
                           src={product.primaryImage}
                           alt={product.name}
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-contain lg:object-cover p-2 lg:p-0"
                         />
                       </Link>
-                      <div className="p-5 space-y-4">
+                      <div className="p-4 sm:p-5 space-y-3.5 sm:space-y-4">
                         <div>
-                          <p className="text-xs text-white/45">
+                          <p className="text-xs text-white/45 truncate">
                             {product.concentration} · {product.family}
                           </p>
                           <Link
                             to={`/product/${product.slug}`}
-                            className="font-serif-display text-2xl text-white hover:text-[#d6be96]"
+                            className="font-serif-display text-xl sm:text-2xl text-white hover:text-[#d6be96] block truncate"
                           >
                             {product.name}
                           </Link>
@@ -782,16 +789,16 @@ export const AccountPage: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => addToCart(product, 0, 1, true)}
-                            className="flex-1 h-10 px-4 rounded-lg bg-[#f2e6d5] hover:bg-[#d6be96] text-[#050508] text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                            className="flex-1 h-10 px-3 sm:px-4 rounded-lg bg-[#f2e6d5] hover:bg-[#d6be96] text-[#050508] text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
                           >
-                            <ShoppingBag className="w-3.5 h-3.5" />
+                            <ShoppingBag className="w-3.5 h-3.5 shrink-0" />
                             <span>Move to Bag</span>
                           </button>
                           <button
                             type="button"
                             onClick={() => toggleWishlist(product.id)}
                             aria-label="Remove from wishlist"
-                            className="h-10 px-3 rounded-lg bg-white/[0.05] hover:bg-white/[0.12] text-white/70 hover:text-white text-xs cursor-pointer"
+                            className="h-10 px-3 rounded-lg bg-white/[0.05] hover:bg-white/[0.12] text-white/70 hover:text-white text-xs cursor-pointer shrink-0"
                           >
                             Remove
                           </button>
@@ -807,11 +814,13 @@ export const AccountPage: React.FC = () => {
 
         {/* TAB 2: ORDER HISTORY */}
         {tab === 'orders' && (
-          <div className="space-y-5">
+          <div className="space-y-4 sm:space-y-5">
             {orders.length === 0 ? (
-              <div className="p-14 rounded-2xl bg-[#0a0a0f] border border-white/[0.07] text-center space-y-4">
+              <div className="p-7 sm:p-14 rounded-2xl bg-[#0a0a0f] border border-white/[0.07] text-center space-y-4">
                 <Package className="w-8 h-8 text-[#d6be96] mx-auto" />
-                <h2 className="font-serif-display text-3xl text-white">No Past Orders Yet</h2>
+                <h2 className="font-serif-display text-2xl sm:text-3xl text-white">
+                  No Past Orders Yet
+                </h2>
                 <p className="text-sm text-white/55 max-w-md mx-auto">
                   Completed NORVA orders and receipts will appear here automatically.
                 </p>
@@ -826,9 +835,9 @@ export const AccountPage: React.FC = () => {
               orders.map((ord) => (
                 <div
                   key={ord.orderNumber}
-                  className="p-6 sm:p-8 rounded-2xl bg-[#0a0a0f] border border-white/[0.08] space-y-5"
+                  className="p-4 sm:p-8 rounded-2xl bg-[#0a0a0f] border border-white/[0.08] space-y-4 sm:space-y-5"
                 >
-                  <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-white/[0.07]">
+                  <div className="flex flex-wrap items-center justify-between gap-3 sm:gap-4 pb-4 border-b border-white/[0.07]">
                     <div>
                       <span className="font-mono-tabular text-sm font-semibold text-[#d6be96]">
                         {ord.orderNumber}
@@ -845,20 +854,20 @@ export const AccountPage: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4">
                     {ord.items.map((it) => (
-                      <div key={it.key} className="flex items-center gap-3">
+                      <div key={it.key} className="flex items-center gap-3 min-w-0">
                         <div className="w-12 h-12 rounded-lg overflow-hidden bg-[#050508] shrink-0">
                           <LuxuryImage
                             src={it.image}
                             alt={it.name}
-                            className="w-full h-full object-cover"
+                            className="w-full h-full object-contain sm:object-cover"
                           />
                         </div>
-                        <div>
+                        <div className="min-w-0">
                           <Link
                             to={`/product/${it.slug}`}
-                            className="font-serif-display text-lg text-white hover:text-[#d6be96]"
+                            className="font-serif-display text-lg text-white hover:text-[#d6be96] block truncate"
                           >
                             {it.name}
                           </Link>
@@ -879,9 +888,11 @@ export const AccountPage: React.FC = () => {
         {tab === 'profile' && (
           <form
             onSubmit={handleSaveProfile}
-            className="max-w-2xl p-7 sm:p-10 rounded-2xl bg-[#0a0a0f] border border-white/[0.08] space-y-5"
+            className="max-w-2xl p-5 sm:p-10 rounded-2xl bg-[#0a0a0f] border border-white/[0.08] space-y-5"
           >
-            <h2 className="font-serif-display text-3xl text-white">Saved Dispatch Coordinates</h2>
+            <h2 className="font-serif-display text-2xl sm:text-3xl text-white">
+              Saved Dispatch Coordinates
+            </h2>
             <p className="text-xs text-white/55">
               Stored locally in your browser for effortless one-step checkout.
             </p>
@@ -950,7 +961,7 @@ export const AccountPage: React.FC = () => {
 
             <button
               type="submit"
-              className="h-11 px-7 rounded-lg bg-[#f2e6d5] hover:bg-[#d6be96] text-[#050508] text-xs font-semibold uppercase tracking-[0.14em] transition-colors cursor-pointer"
+              className="w-full sm:w-auto h-11 px-7 rounded-lg bg-[#f2e6d5] hover:bg-[#d6be96] text-[#050508] text-xs font-semibold uppercase tracking-[0.14em] transition-colors cursor-pointer"
             >
               Save Preferences
             </button>
