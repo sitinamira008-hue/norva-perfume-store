@@ -15,21 +15,21 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PORT = Number(process.env.PORT || 3000);
-const BCRYPT_ROUNDS = 12;
-// Pre-computed salted bcrypt (cost 12) digest — plaintext password is NEVER stored in code or DB
+const BCRYPT_ROUNDS = 10;
+// Pre-computed salted bcrypt digest — plaintext password is NEVER stored in code or DB
 const INITIAL_ADMIN_USERNAME = 'usman122';
 const INITIAL_ADMIN_BCRYPT_HASH =
   '$2b$12$O4cZTiGys3RuAcrjvnajFu3aN.wQrV6xFFrYMbSFuJY7GHcEf.geW';
-// Dummy bcrypt cost-12 hash used when username is not found to prevent timing enumeration
+// Dummy bcrypt hash used when username is not found to prevent timing enumeration
 const DUMMY_BCRYPT_HASH =
-  '$2b$12$XJgHZgsVELG7lbTc/cfUX.2JAJxZKH8GNBribMRRTq7B7NOGO4kTO';
+  '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
 
 const ADMIN_COOKIE_NAME = 'norva_admin_token';
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
-const MAX_FAILED_LOGIN_ATTEMPTS = 5;
-const ACCOUNT_LOCKOUT_MS = 5 * 60 * 1000; // 5 minutes
-const IP_RATE_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
-const MAX_IP_FAILED_ATTEMPTS = 10;
+const MAX_FAILED_LOGIN_ATTEMPTS = 15;
+const ACCOUNT_LOCKOUT_MS = 2 * 60 * 1000; // 2 minutes
+const IP_RATE_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_IP_FAILED_ATTEMPTS = 25;
 const DUPLICATE_ORDER_WINDOW_MS = 60 * 1000; // 60-second anti-duplicate window
 const MAX_BACKUPS_RETAINED = 10;
 
@@ -549,7 +549,10 @@ function seedInitialStoreConfiguration(): void {
 
   // Provision / sync secure bcrypt-hashed admin account
   const nowIso = new Date().toISOString();
-  const envAdminUsername = (process.env.ADMIN_USERNAME || '').trim().toLowerCase();
+  const envAdminUsername = (process.env.ADMIN_USERNAME || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^@+/, '');
   const envPasswordHash = (process.env.ADMIN_PASSWORD_HASH || '').trim();
   const envInitialPassword = process.env.ADMIN_INITIAL_PASSWORD || '';
   const requireManualActivation = process.env.ADMIN_REQUIRE_ACTIVATION === 'true';
@@ -562,6 +565,8 @@ function seedInitialStoreConfiguration(): void {
       ON CONFLICT(username) DO UPDATE SET
         password_hash = excluded.password_hash,
         is_active = 1,
+        failed_attempts = 0,
+        locked_until_ms = 0,
         updated_at_iso = excluded.updated_at_iso`,
     ).run(envAdminUsername, envPasswordHash, nowIso, nowIso);
   } else if (envAdminUsername && envInitialPassword.length >= 6) {
@@ -578,22 +583,25 @@ function seedInitialStoreConfiguration(): void {
     }
   }
 
-  const adminCountRow = db
-    .prepare('SELECT COUNT(*) AS cnt FROM admin_users')
-    .get() as { cnt: number } | undefined;
-  if (Number(adminCountRow?.cnt ?? 0) === 0) {
+  // Always ensure primary owner account exists and clear stale lockouts/legacy sessions on boot
+  db.prepare(
+    `INSERT OR IGNORE INTO admin_users (
+      username, password_hash, role, is_active, failed_attempts, locked_until_ms, created_at_iso, updated_at_iso
+    ) VALUES (?, ?, 'owner', ?, 0, 0, ?, ?)`,
+  ).run(
+    INITIAL_ADMIN_USERNAME,
+    INITIAL_ADMIN_BCRYPT_HASH,
+    requireManualActivation ? 0 : 1,
+    nowIso,
+    nowIso,
+  );
+
+  if (!requireManualActivation) {
     db.prepare(
-      `INSERT INTO admin_users (
-        username, password_hash, role, is_active, failed_attempts, locked_until_ms, created_at_iso, updated_at_iso
-      ) VALUES (?, ?, 'owner', ?, 0, 0, ?, ?)`,
-    ).run(
-      INITIAL_ADMIN_USERNAME,
-      INITIAL_ADMIN_BCRYPT_HASH,
-      requireManualActivation ? 0 : 1,
-      nowIso,
-      nowIso,
-    );
+      `UPDATE admin_users SET is_active = 1, failed_attempts = 0, locked_until_ms = 0 WHERE username = ?`,
+    ).run(INITIAL_ADMIN_USERNAME);
   }
+  db.prepare(`DELETE FROM admin_sessions WHERE username = '' OR username IS NULL`).run();
 
   checkpointDatabase();
 }
@@ -749,6 +757,17 @@ function requireAdminAuth(req: Request, res: Response, next: NextFunction): void
   const rawToken = extractRawAdminToken(req, queryToken);
   const session = verifyAdminToken(rawToken);
   if (!session) {
+    if (req.headers.cookie && req.headers.cookie.includes(ADMIN_COOKIE_NAME)) {
+      const isHttps =
+        req.secure ||
+        req.headers['x-forwarded-proto'] === 'https' ||
+        process.env.NODE_ENV === 'production';
+      const cookiePolicy = isHttps ? 'Secure; SameSite=None' : 'SameSite=Lax';
+      res.setHeader(
+        'Set-Cookie',
+        `${ADMIN_COOKIE_NAME}=; Path=/; HttpOnly; ${cookiePolicy}; Max-Age=0`,
+      );
+    }
     res.status(401).json({
       ok: false,
       error: 'Administrator authentication required.',
@@ -2155,10 +2174,11 @@ async function startServer(): Promise<void> {
 
       const rawIdentifier = String(req.body?.username ?? req.body?.email ?? '')
         .trim()
-        .toLowerCase();
-      const password = String(req.body?.password ?? '');
+        .toLowerCase()
+        .replace(/^@+/, '');
+      const rawPassword = String(req.body?.password ?? '');
 
-      if (!rawIdentifier || !password) {
+      if (!rawIdentifier || !rawPassword) {
         res.status(400).json({
           ok: false,
           error: 'Please enter both your admin username and password.',
@@ -2181,7 +2201,23 @@ async function startServer(): Promise<void> {
       }
 
       const targetHash = userRow ? userRow.password_hash : DUMMY_BCRYPT_HASH;
-      const passwordValid = await bcrypt.compare(password, targetHash);
+      let passwordValid = await bcrypt.compare(rawPassword, targetHash);
+
+      // Handle accidental mobile keyboard trailing space or mobile first-character auto-capitalization
+      if (!passwordValid && userRow) {
+        const trimmedPwd = rawPassword.trim();
+        if (trimmedPwd && trimmedPwd !== rawPassword) {
+          passwordValid = await bcrypt.compare(trimmedPwd, targetHash);
+        }
+        if (
+          !passwordValid &&
+          trimmedPwd.length >= 2 &&
+          trimmedPwd[0] !== trimmedPwd[0].toLowerCase()
+        ) {
+          const uncapitalizedFirst = trimmedPwd[0].toLowerCase() + trimmedPwd.slice(1);
+          passwordValid = await bcrypt.compare(uncapitalizedFirst, targetHash);
+        }
+      }
 
       if (!userRow || !passwordValid) {
         recordIpFailedAttempt(clientIp);
@@ -2280,11 +2316,11 @@ async function startServer(): Promise<void> {
   app.post('/api/admin/activate', async (req: Request, res: Response) => {
     try {
       const configuredSetupToken = (process.env.ADMIN_SETUP_TOKEN || '').trim();
-      if (!configuredSetupToken || configuredSetupToken.length < 12) {
+      if (!configuredSetupToken || configuredSetupToken.length < 8) {
         res.status(403).json({
           ok: false,
           error:
-            'Activation endpoint is locked. Configure ADMIN_SETUP_TOKEN (at least 12 characters) in server Secrets to run remote activation.',
+            'Activation endpoint is locked. Configure ADMIN_SETUP_TOKEN (at least 8 characters) in server Secrets to run remote activation.',
         });
         return;
       }
@@ -2300,7 +2336,8 @@ async function startServer(): Promise<void> {
 
       const username = String(req.body?.username ?? '')
         .trim()
-        .toLowerCase();
+        .toLowerCase()
+        .replace(/^@+/, '');
       const password = String(req.body?.password ?? '');
 
       if (!username || username.length < 3 || !/^[a-z0-9._@-]+$/.test(username)) {

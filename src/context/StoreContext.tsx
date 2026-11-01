@@ -716,12 +716,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Verify existing Admin session on boot / refresh
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 4500);
+
     async function verifySessionOnBoot() {
       try {
         const res = await fetch('/api/admin/session', {
           method: 'GET',
           credentials: 'include',
           headers: buildAdminHeaders(adminTokenRef.current),
+          signal: controller.signal,
         });
         if (!res.ok) {
           if (!cancelled) {
@@ -736,11 +740,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           if (typeof data.unseenCount === 'number') {
             setUnseenOrderCount(data.unseenCount);
           }
-          await fetchAdminDashboardData(adminTokenRef.current);
+          fetchAdminDashboardData(adminTokenRef.current);
         }
       } catch {
-        // Keep token for retry if server is restarting
+        if (!cancelled && !adminTokenRef.current) {
+          setAdminSession(null);
+        }
       } finally {
+        window.clearTimeout(timeoutId);
         if (!cancelled) {
           setIsAdminAuthChecking(false);
         }
@@ -749,6 +756,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     verifySessionOnBoot();
     return () => {
       cancelled = true;
+      window.clearTimeout(timeoutId);
+      controller.abort();
     };
   }, [buildAdminHeaders, fetchAdminDashboardData]);
 

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
-import { ChevronDown, Heart, Menu, Search, ShoppingBag, User, X } from 'lucide-react';
+import { ChevronDown, Heart, Lock, Menu, Search, ShoppingBag, User, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useStore } from '../context/StoreContext';
 
@@ -153,9 +153,12 @@ export const Navbar: React.FC = () => {
 
           <Link
             to="/admin"
-            className="hidden sm:inline-flex items-center gap-1.5 text-xs font-medium text-white/60 hover:text-[#d6be96] transition-colors whitespace-nowrap shrink-0 px-1.5"
+            aria-label="Admin Console"
+            title="Admin Console"
+            className="inline-flex items-center justify-center gap-1.5 w-9 h-10 sm:w-auto sm:h-auto text-xs font-medium text-white/70 hover:text-[#d6be96] transition-colors whitespace-nowrap shrink-0 sm:px-1.5"
           >
-            <span>Admin</span>
+            <Lock className="w-3.5 h-3.5 text-[#d6be96]" />
+            <span className="hidden sm:inline">Admin</span>
             {adminSession && unseenOrderCount > 0 && (
               <span className="font-mono-tabular text-[10px] px-1.5 py-0.5 rounded bg-[#36d67e] text-[#050508] font-bold">
                 {unseenOrderCount}

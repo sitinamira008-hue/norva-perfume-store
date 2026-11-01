@@ -246,7 +246,8 @@ export const AdminDashboardPage: React.FC = () => {
     if (isLoggingIn) return;
     setIsLoggingIn(true);
     setLoginError(null);
-    const res = await loginAdmin(loginUsername.trim(), loginPassword);
+    const normalizedUser = loginUsername.trim().replace(/^@+/, '');
+    const res = await loginAdmin(normalizedUser, loginPassword);
     setIsLoggingIn(false);
     if (!res.ok) {
       setLoginError(res.error ?? 'Authentication failed');
@@ -578,6 +579,7 @@ export const AdminDashboardPage: React.FC = () => {
                 required
                 autoComplete="username"
                 spellCheck={false}
+                autoCorrect="off"
                 autoCapitalize="none"
                 value={loginUsername}
                 onChange={(e) => {
@@ -599,6 +601,9 @@ export const AdminDashboardPage: React.FC = () => {
                   type={showPassword ? 'text' : 'password'}
                   required
                   autoComplete="current-password"
+                  spellCheck={false}
+                  autoCorrect="off"
+                  autoCapitalize="none"
                   value={loginPassword}
                   onChange={(e) => {
                     setLoginPassword(e.target.value);
