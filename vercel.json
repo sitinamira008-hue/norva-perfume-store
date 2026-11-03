@@ -1,0 +1,17 @@
+{
+  "functions": {
+    "api/index.ts": {
+      "includeFiles": "node_modules/sql.js/dist/**"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api?__api_path=$1"
+    },
+    {
+      "source": "/((?!api/|assets/|images/|favicon).*)",
+      "destination": "/index.html"
+    }
+  ]
+}

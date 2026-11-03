@@ -121,6 +121,7 @@ export const AdminDashboardPage: React.FC = () => {
     isAdminAuthChecking,
     isAdminLoading,
     loginAdmin,
+    activateOrResetAdmin,
     changeAdminPassword,
     logoutAdmin,
     products,
@@ -162,6 +163,21 @@ export const AdminDashboardPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+
+  // Secure Owner Setup / Reset Mode (gated by server ADMIN_SETUP_TOKEN)
+  const [isResetMode, setIsResetMode] = useState(false);
+  const [setupTokenInput, setSetupTokenInput] = useState('');
+  const [resetUsernameInput, setResetUsernameInput] = useState('');
+  const [resetNewPwdInput, setResetNewPwdInput] = useState('');
+  const [resetConfirmPwdInput, setResetConfirmPwdInput] = useState('');
+  const [isResettingOwner, setIsResettingOwner] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [resetSuccess, setResetSuccess] = useState<string | null>(null);
+  const [authStatusInfo, setAuthStatusInfo] = useState<{
+    accountActive: boolean;
+    setupTokenConfigured: boolean;
+    persistentStorage: boolean;
+  } | null>(null);
 
   // Authenticated Password Rotation Modal State
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
@@ -241,6 +257,26 @@ export const AdminDashboardPage: React.FC = () => {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [selectedOrder]);
 
+  useEffect(() => {
+    if (adminSession) return;
+    let cancelled = false;
+    fetch('/api/admin/auth-status')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!cancelled && d?.ok) {
+          setAuthStatusInfo({
+            accountActive: Boolean(d.accountActive),
+            setupTokenConfigured: Boolean(d.setupTokenConfigured),
+            persistentStorage: d.persistentStorage !== false,
+          });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [adminSession, isResetMode]);
+
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isLoggingIn) return;
@@ -255,6 +291,44 @@ export const AdminDashboardPage: React.FC = () => {
       setLoginError(null);
       setLoginPassword('');
     }
+  };
+
+  const handleOwnerResetSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isResettingOwner) return;
+    setResetError(null);
+    setResetSuccess(null);
+
+    if (resetNewPwdInput.length < 8) {
+      setResetError('New password must be at least 8 characters long.');
+      return;
+    }
+    if (resetNewPwdInput !== resetConfirmPwdInput) {
+      setResetError('New password and confirmation do not match.');
+      return;
+    }
+
+    setIsResettingOwner(true);
+    const cleanUser = resetUsernameInput.trim().toLowerCase().replace(/^@+/, '');
+    const res = await activateOrResetAdmin({
+      setupToken: setupTokenInput,
+      username: cleanUser,
+      password: resetNewPwdInput,
+    });
+    setIsResettingOwner(false);
+
+    if (!res.ok) {
+      setResetError(res.error ?? 'Failed to initialize owner password.');
+      return;
+    }
+
+    setSetupTokenInput('');
+    setResetNewPwdInput('');
+    setResetConfirmPwdInput('');
+    setLoginUsername(cleanUser);
+    setResetSuccess(
+      res.message || 'Owner password updated with bcrypt hashing. You can now sign in.',
+    );
   };
 
   const handlePasswordChangeSubmit = async (e: React.FormEvent) => {
@@ -644,6 +718,165 @@ export const AdminDashboardPage: React.FC = () => {
               )}
             </button>
           </form>
+
+          {isResetMode ? (
+            <form
+              onSubmit={handleOwnerResetSubmit}
+              className="p-4 rounded-xl bg-[#050508] border border-white/12 space-y-3.5"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold text-[#d6be96]">
+                  Owner Password Initialization / Reset
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsResetMode(false);
+                    setResetError(null);
+                    setResetSuccess(null);
+                  }}
+                  className="text-[11px] text-white/50 hover:text-white cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+
+              <p className="text-[11px] text-white/50 leading-relaxed">
+                Requires the server-side <code className="text-[#d6be96]">ADMIN_SETUP_TOKEN</code>{' '}
+                secret. Hashes your new password on the server using salted bcrypt (cost 12).
+                {authStatusInfo && !authStatusInfo.setupTokenConfigured && (
+                  <span className="block mt-1 text-amber-300/90">
+                    Status: ADMIN_SETUP_TOKEN is currently unset (locked) in Server Secrets.
+                  </span>
+                )}
+              </p>
+
+              <div>
+                <label className="block text-[11px] text-white/65 mb-1" htmlFor="setup-token-input">
+                  Server Setup Token (ADMIN_SETUP_TOKEN)
+                </label>
+                <input
+                  id="setup-token-input"
+                  type="password"
+                  required
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={setupTokenInput}
+                  onChange={(e) => {
+                    setSetupTokenInput(e.target.value);
+                    setResetError(null);
+                  }}
+                  placeholder="Enter ADMIN_SETUP_TOKEN"
+                  className="w-full h-10 px-3 rounded-lg bg-[#0a0a0f] border border-white/15 text-xs text-white placeholder:text-white/30 focus:outline-none focus:border-[#d6be96]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] text-white/65 mb-1" htmlFor="reset-owner-user">
+                  Owner Username
+                </label>
+                <input
+                  id="reset-owner-user"
+                  type="text"
+                  required
+                  spellCheck={false}
+                  autoCorrect="off"
+                  autoCapitalize="none"
+                  value={resetUsernameInput}
+                  onChange={(e) => {
+                    setResetUsernameInput(e.target.value);
+                    setResetError(null);
+                  }}
+                  placeholder="Enter owner username"
+                  className="w-full h-10 px-3 rounded-lg bg-[#0a0a0f] border border-white/15 text-xs text-white placeholder:text-white/30 focus:outline-none focus:border-[#d6be96]"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-[11px] text-white/65 mb-1" htmlFor="reset-new-pwd">
+                    New Password
+                  </label>
+                  <input
+                    id="reset-new-pwd"
+                    type="password"
+                    required
+                    minLength={8}
+                    autoComplete="new-password"
+                    spellCheck={false}
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    value={resetNewPwdInput}
+                    onChange={(e) => {
+                      setResetNewPwdInput(e.target.value);
+                      setResetError(null);
+                    }}
+                    placeholder="Min 8 characters"
+                    className="w-full h-10 px-3 rounded-lg bg-[#0a0a0f] border border-white/15 text-xs text-white placeholder:text-white/30 focus:outline-none focus:border-[#d6be96]"
+                  />
+                </div>
+                <div>
+                  <label
+                    className="block text-[11px] text-white/65 mb-1"
+                    htmlFor="reset-confirm-pwd"
+                  >
+                    Confirm Password
+                  </label>
+                  <input
+                    id="reset-confirm-pwd"
+                    type="password"
+                    required
+                    minLength={8}
+                    autoComplete="new-password"
+                    spellCheck={false}
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    value={resetConfirmPwdInput}
+                    onChange={(e) => {
+                      setResetConfirmPwdInput(e.target.value);
+                      setResetError(null);
+                    }}
+                    placeholder="Repeat password"
+                    className="w-full h-10 px-3 rounded-lg bg-[#0a0a0f] border border-white/15 text-xs text-white placeholder:text-white/30 focus:outline-none focus:border-[#d6be96]"
+                  />
+                </div>
+              </div>
+
+              {resetError && (
+                <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-xs text-red-300">
+                  {resetError}
+                </div>
+              )}
+
+              {resetSuccess && (
+                <div className="p-2.5 rounded-lg bg-[#36d67e]/10 border border-[#36d67e]/35 text-xs text-[#36d67e]">
+                  {resetSuccess}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={isResettingOwner}
+                className="w-full h-10 rounded-lg bg-white/[0.1] hover:bg-[#d6be96] hover:text-[#050508] text-white text-xs font-semibold transition-colors cursor-pointer"
+              >
+                {isResettingOwner ? 'Initializing...' : 'Set Owner Credentials'}
+              </button>
+            </form>
+          ) : (
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsResetMode(true);
+                  setResetError(null);
+                  setResetSuccess(null);
+                }}
+                className="text-[11px] text-[#d6be96]/80 hover:text-[#d6be96] underline underline-offset-4 cursor-pointer"
+              >
+                Initialize or Reset Owner Password (Setup Token)
+              </button>
+            </div>
+          )}
 
           <div className="pt-4 border-t border-white/[0.06] space-y-2 text-center">
             <p className="text-[11px] text-white/40">

@@ -8,6 +8,9 @@ import React, {
   useState,
 } from 'react';
 import { CatalogProduct, PRODUCTS, ProductReview, formatPKR } from '../data/products';
+import { extractApiErrorMessage } from '../utils/apiError';
+
+export { extractApiErrorMessage };
 
 export type OrderStatus =
   | 'Pending'
@@ -256,6 +259,11 @@ interface StoreContextValue {
 
   // Authenticated Admin Methods
   loginAdmin: (username: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+  activateOrResetAdmin: (params: {
+    setupToken: string;
+    username: string;
+    password: string;
+  }) => Promise<{ ok: boolean; message?: string; error?: string }>;
   changeAdminPassword: (
     currentPassword: string,
     newPassword: string,
@@ -418,6 +426,7 @@ function triggerBlobDownload(blob: Blob, filename: string): void {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+
 /**
  * Resilient JSON POST helper that includes cookies (required for cross-origin preview/public proxy)
  * and automatically re-sends the POST body if a 60s auth-bridge 302 redirect or server warmup
@@ -447,7 +456,23 @@ async function postJsonResilient<T = Record<string, any>>(
 
     const contentType = (res.headers.get('content-type') || '').toLowerCase();
     const isJson = contentType.includes('application/json');
-    const data = isJson ? ((await res.json().catch(() => null)) as T | null) : null;
+    let data: T | null = null;
+
+    if (isJson) {
+      data = (await res.json().catch(() => null)) as T | null;
+    } else if (!res.ok) {
+      const rawText = await res.text().catch(() => '');
+      const trimmed = rawText.trim();
+      if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+        try {
+          data = JSON.parse(trimmed) as T;
+        } catch {
+          data = null;
+        }
+      } else if (trimmed && !trimmed.startsWith('<!DOCTYPE') && !trimmed.startsWith('<html')) {
+        data = ({ ok: false, error: trimmed.slice(0, 240) } as unknown) as T;
+      }
+    }
 
     lastRes = res;
     lastData = data;
@@ -482,23 +507,26 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     for (const item of readStorage<CartItem[]>(STORAGE_KEYS.cart, [])) {
       const current = PRODUCTS.find((p) => p.id === item.productId);
       if (!current) {
-        deduped.set(item.key, item);
         continue;
       }
       const sz = current.sizes[0];
+      const safeQty = Math.max(1, Math.min(99, Math.floor(Number(item.quantity) || 1)));
       const nextKey = `${current.id}__${sz.sku}`;
       const existing = deduped.get(nextKey);
       if (existing) {
-        existing.quantity += item.quantity;
+        existing.quantity = Math.min(99, existing.quantity + safeQty);
       } else {
         deduped.set(nextKey, {
           ...item,
           key: nextKey,
+          productId: current.id,
           name: current.name,
           slug: current.slug,
           image: current.primaryImage,
           sizeLabel: sz.label,
           sizeSku: sz.sku,
+          unitPrice: sz.price,
+          quantity: safeQty,
         });
       }
     }
@@ -1007,7 +1035,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (!res.ok || !data?.ok) {
           return {
             ok: false,
-            error: data?.error || 'Invalid or expired coupon code.',
+            error: extractApiErrorMessage(data, 'Invalid or expired coupon code.'),
           };
         }
         return {
@@ -1038,9 +1066,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (!res.ok || !data?.ok || !data.order) {
           return {
             ok: false,
-            error:
-              data?.error ||
+            error: extractApiErrorMessage(
+              data,
               'No matching order found for that Order Number and Phone Number.',
+            ),
           };
         }
         return {
@@ -1202,10 +1231,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         );
 
         if (!res.ok || !data?.ok || !data.order) {
-          throw new Error(
-            data?.error ||
-              `Order submission failed (HTTP ${res.status}). Please check your details and tap Confirm Order again.`,
-          );
+          const fallbackMsg =
+            res.status >= 500
+              ? `NORVA order server returned HTTP ${res.status}. Please wait a moment and tap Confirm Order again.`
+              : `Order submission could not be completed (HTTP ${res.status}). Please verify your delivery details and try again.`;
+          throw new Error(extractApiErrorMessage(data, fallbackMsg));
         }
 
         const savedOrder: PlacedOrder = {
@@ -1246,7 +1276,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             'Order request timed out. Please check your connection and tap Confirm Order again — duplicate protection is active.',
           );
         }
-        throw err;
+        if (err instanceof Error) {
+          if (err.message === '[object Object]') {
+            throw new Error(
+              'Unable to complete your order right now. Please verify your delivery details and tap Confirm Order again.',
+            );
+          }
+          throw err;
+        }
+        throw new Error(
+          extractApiErrorMessage(
+            err,
+            'Unable to submit order right now. Please check your connection and try again.',
+          ),
+        );
       } finally {
         window.clearTimeout(timeoutId);
       }
@@ -1267,7 +1310,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data?.ok || !data.review) {
-          const errMsg = data?.error || 'Unable to publish review right now.';
+          const errMsg = extractApiErrorMessage(data, 'Unable to publish review right now.');
           showToast(errMsg);
           return { ok: false, error: errMsg };
         }
@@ -1392,9 +1435,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         const data = await res.json().catch(() => null);
         if (!res.ok || !data?.ok || !data.session) {
+          if (!data && (res.status === 404 || res.status === 405)) {
+            return {
+              ok: false,
+              error: `Backend API (/api/admin/login) returned HTTP ${res.status}. Ensure the Node API server is deployed alongside the frontend.`,
+            };
+          }
+          if (!data && res.status >= 500) {
+            return {
+              ok: false,
+              error: `Backend authentication server error (HTTP ${res.status}). Check server logs and DATABASE_PATH permissions.`,
+            };
+          }
           return {
             ok: false,
-            error: data?.error || 'Authentication failed. Check your username and password.',
+            error: extractApiErrorMessage(data, 'Invalid administrator username or password.'),
           };
         }
 
@@ -1418,6 +1473,46 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     [fetchAdminDashboardData, showToast],
   );
 
+  const activateOrResetAdmin = useCallback(
+    async (params: {
+      setupToken: string;
+      username: string;
+      password: string;
+    }): Promise<{ ok: boolean; message?: string; error?: string }> => {
+      try {
+        const res = await fetch('/api/admin/activate', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-setup-token': params.setupToken.trim(),
+          },
+          body: JSON.stringify({
+            username: params.username.trim(),
+            password: params.password,
+          }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.ok) {
+          return {
+            ok: false,
+            error: extractApiErrorMessage(
+              data,
+              `Owner initialization failed (HTTP ${res.status}). Verify ADMIN_SETUP_TOKEN in Server Secrets.`,
+            ),
+          };
+        }
+        showToast('Owner credentials initialized securely');
+        return { ok: true, message: data.message };
+      } catch {
+        return {
+          ok: false,
+          error: 'Could not reach NORVA server to initialize owner account.',
+        };
+      }
+    },
+    [showToast],
+  );
+
   const changeAdminPassword = useCallback(
     async (
       currentPassword: string,
@@ -1434,7 +1529,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (!res.ok || !data?.ok) {
           return {
             ok: false,
-            error: data?.error || 'Unable to update administrator password.',
+            error: extractApiErrorMessage(data, 'Unable to update administrator password.'),
           };
         }
         showToast('Administrator password updated securely');
@@ -1484,7 +1579,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data?.ok || !data.order) {
-          showToast(data?.error || `Failed to update ${orderNumber}`);
+          showToast(extractApiErrorMessage(data, `Failed to update ${orderNumber}`));
           return null;
         }
         const updated = resolveCatalogOrderImages(data.order as PlacedOrder);
@@ -1577,7 +1672,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data?.ok) {
-          showToast(data?.error || `Unable to remove ${orderNumber}`);
+          showToast(extractApiErrorMessage(data, `Unable to remove ${orderNumber}`));
           return false;
         }
         setAdminOrders((prev) => prev.filter((ord) => ord.orderNumber !== orderNumber));
@@ -1647,7 +1742,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data?.ok || !Array.isArray(data.shippingRates)) {
-          return { ok: false, error: data?.error || 'Failed to save shipping rate.' };
+          return {
+            ok: false,
+            error: extractApiErrorMessage(data, 'Failed to save shipping rate.'),
+          };
         }
         setAdminShippingRates(data.shippingRates);
         setShippingRates(data.shippingRates.filter((r: ShippingRateConfig) => r.active));
@@ -1670,7 +1768,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data?.ok || !Array.isArray(data.shippingRates)) {
-          const errMsg = data?.error || 'Unable to delete shipping rate.';
+          const errMsg = extractApiErrorMessage(data, 'Unable to delete shipping rate.');
           showToast(errMsg);
           return { ok: false, error: errMsg };
         }
@@ -1697,7 +1795,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data?.ok || !Array.isArray(data.coupons)) {
-          return { ok: false, error: data?.error || 'Failed to save coupon code.' };
+          return {
+            ok: false,
+            error: extractApiErrorMessage(data, 'Failed to save coupon code.'),
+          };
         }
         setAdminCoupons(data.coupons);
         showToast(`Coupon ${coupon.code.toUpperCase()} saved`);
@@ -1760,7 +1861,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.ok) {
-        return { ok: false, error: data?.error || 'Failed to create database backup.' };
+        return {
+          ok: false,
+          error: extractApiErrorMessage(data, 'Failed to create database backup.'),
+        };
       }
       if (Array.isArray(data.backups)) {
         setAdminBackups(data.backups);
@@ -1884,6 +1988,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       toggleInquiryResolved,
       addSubscriber,
       loginAdmin,
+      activateOrResetAdmin,
       changeAdminPassword,
       logoutAdmin,
       refreshAdminOrders,
@@ -1957,6 +2062,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       toggleInquiryResolved,
       addSubscriber,
       loginAdmin,
+      activateOrResetAdmin,
       changeAdminPassword,
       logoutAdmin,
       refreshAdminOrders,

@@ -23,7 +23,13 @@ import {
   X,
 } from 'lucide-react';
 import { formatPKR } from '../data/products';
-import { CouponConfig, OrderStatus, PlacedOrder, useStore } from '../context/StoreContext';
+import {
+  CouponConfig,
+  extractApiErrorMessage,
+  OrderStatus,
+  PlacedOrder,
+  useStore,
+} from '../context/StoreContext';
 import { LuxuryImage, SEOHead } from '../components/LuxuryUI';
 import {
   WhatsAppIcon,
@@ -100,6 +106,7 @@ export const CheckoutPage: React.FC = () => {
   const phoneInputRef = useRef<HTMLInputElement | null>(null);
   const addressInputRef = useRef<HTMLInputElement | null>(null);
   const cityInputRef = useRef<HTMLInputElement | null>(null);
+  const errorBannerRef = useRef<HTMLDivElement | null>(null);
 
   // Keep proxy auth token cache warm while customer fills out checkout form
   useEffect(() => {
@@ -324,9 +331,17 @@ export const CheckoutPage: React.FC = () => {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
       const msg =
-        err instanceof Error ? err.message : 'Unable to submit order right now. Please retry.';
+        err instanceof Error && err.message && err.message !== '[object Object]'
+          ? err.message
+          : extractApiErrorMessage(
+              err,
+              'Unable to submit your order right now. Please check your details and tap Confirm Order again.',
+            );
       setSubmitError(msg);
       showToast(msg);
+      window.setTimeout(() => {
+        errorBannerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }, 50);
     } finally {
       submittingLockRef.current = false;
       setIsSubmitting(false);
@@ -918,11 +933,17 @@ export const CheckoutPage: React.FC = () => {
 
               {(stockIssueMessage || submitError) && (
                 <div
+                  ref={errorBannerRef}
                   role="alert"
                   className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/35 text-xs text-red-200 flex items-start gap-2.5"
                 >
                   <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-                  <span>{stockIssueMessage ?? submitError}</span>
+                  <span>
+                    {stockIssueMessage ??
+                      (submitError && submitError !== '[object Object]'
+                        ? submitError
+                        : 'Unable to submit your order right now. Please check your details and try again.')}
+                  </span>
                 </div>
               )}
 

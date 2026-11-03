@@ -4,22 +4,18 @@ import fs from 'node:fs';
 import { createServer } from 'node:http';
 import type { IncomingMessage } from 'node:http';
 import path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
-import { fileURLToPath } from 'node:url';
+import os from 'node:os';
 import bcrypt from 'bcryptjs';
 import express from 'express';
 import type { NextFunction, Request, Response } from 'express';
 import { WebSocket, WebSocketServer } from 'ws';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 const PORT = Number(process.env.PORT || 3000);
-const BCRYPT_ROUNDS = 10;
-// Pre-computed salted bcrypt digest — plaintext password is NEVER stored in code or DB
-const INITIAL_ADMIN_USERNAME = 'usman122';
+const BCRYPT_ROUNDS = 12;
+// Pre-computed salted bcrypt (cost 12) digest — plaintext password is NEVER stored in code or DB
+const INITIAL_ADMIN_USERNAME = 'zn8xc';
 const INITIAL_ADMIN_BCRYPT_HASH =
-  '$2b$12$O4cZTiGys3RuAcrjvnajFu3aN.wQrV6xFFrYMbSFuJY7GHcEf.geW';
+  '$2b$12$cKHO2DOza39ETn.nDLpHw.P7aqqxQexiDQlJrCLvktOGtvG8lGpXu';
 // Dummy bcrypt hash used when username is not found to prevent timing enumeration
 const DUMMY_BCRYPT_HASH =
   '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
@@ -305,20 +301,248 @@ interface AdminUserRow {
 // ============================================================================
 // PERSISTENT SQLITE DATABASE & MIGRATIONS
 // ============================================================================
-const dbFilePath = path.resolve(
-  process.cwd(),
-  process.env.DATABASE_PATH || 'data/norva_store.sqlite',
-);
-const backupsDir = path.resolve(path.dirname(dbFilePath), 'backups');
-fs.mkdirSync(path.dirname(dbFilePath), { recursive: true });
-fs.mkdirSync(backupsDir, { recursive: true });
+function stripSurroundingQuotes(val: string): string {
+  const trimmed = val.trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
+}
 
-const db = new DatabaseSync(dbFilePath);
-db.exec(`
-  PRAGMA journal_mode = WAL;
-  PRAGMA synchronous = FULL;
-  PRAGMA foreign_keys = ON;
-  PRAGMA busy_timeout = 5000;
+function normalizeBcryptHashFromEnv(raw: string | undefined): string {
+  if (!raw) return '';
+  const unquoted = stripSurroundingQuotes(raw).replace(/\\\$/g, '$');
+  if (unquoted.startsWith('$2y$')) {
+    return `$2b$${unquoted.slice(4)}`;
+  }
+  return unquoted;
+}
+
+function resolveWritableDatabasePaths(): {
+  dbFilePath: string;
+  backupsDir: string;
+  isEphemeralFallback: boolean;
+} {
+  const rawDbEnv = stripSurroundingQuotes(process.env.DATABASE_PATH || '');
+  const candidatePath = path.resolve(
+    process.cwd(),
+    rawDbEnv || 'data/norva_store.sqlite',
+  );
+
+  // On Vercel serverless, /var/task is read-only; fall back cleanly to /tmp unless /tmp was already specified
+  const mustUseTmp =
+    process.env.VERCEL === '1' && !candidatePath.startsWith(os.tmpdir());
+
+  if (!mustUseTmp) {
+    try {
+      const dir = path.dirname(candidatePath);
+      const bkDir = path.resolve(dir, 'backups');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.mkdirSync(bkDir, { recursive: true });
+      fs.accessSync(dir, fs.constants.W_OK);
+      return { dbFilePath: candidatePath, backupsDir: bkDir, isEphemeralFallback: false };
+    } catch (err) {
+      console.warn(
+        `Configured DATABASE_PATH (${candidatePath}) is not writable; falling back to temporary storage.`,
+        err,
+      );
+    }
+  }
+
+  const tmpBase = path.join(os.tmpdir(), 'norva_data');
+  const fallbackDb = path.join(tmpBase, 'norva_store.sqlite');
+  const fallbackBackups = path.join(tmpBase, 'backups');
+  fs.mkdirSync(tmpBase, { recursive: true });
+  fs.mkdirSync(fallbackBackups, { recursive: true });
+  return { dbFilePath: fallbackDb, backupsDir: fallbackBackups, isEphemeralFallback: true };
+}
+
+interface SqliteStatementLike {
+  get(...params: unknown[]): unknown;
+  all(...params: unknown[]): unknown[];
+  run(...params: unknown[]): { changes: number; lastInsertRowid?: number | bigint };
+}
+
+interface SqliteDatabaseLike {
+  readonly engine: 'node:sqlite' | 'sql.js';
+  exec(sql: string): void;
+  prepare(sql: string): SqliteStatementLike;
+  exportSnapshot?(targetPath: string): void;
+  flushToDisk?(): void;
+}
+
+const { dbFilePath, backupsDir, isEphemeralFallback } = resolveWritableDatabasePaths();
+let db!: SqliteDatabaseLike;
+let dbInitPromise: Promise<void> | null = null;
+
+async function openCompatibleSqliteDatabase(filePath: string): Promise<SqliteDatabaseLike> {
+  // 1. Primary Engine: Native built-in node:sqlite (Node 22.5+, full WAL + ACID)
+  try {
+    const builtinModuleId = 'node:' + 'sqlite';
+    const sqliteMod = (await import(builtinModuleId)) as {
+      DatabaseSync: new (p: string) => {
+        exec(sql: string): void;
+        prepare(sql: string): SqliteStatementLike;
+      };
+    };
+    const nativeDb = new sqliteMod.DatabaseSync(filePath);
+    return {
+      engine: 'node:sqlite',
+      exec: (sql: string) => nativeDb.exec(sql),
+      prepare: (sql: string) => nativeDb.prepare(sql),
+    };
+  } catch (nativeErr) {
+    console.warn(
+      'Native node:sqlite unavailable on current Node runtime; activating sql.js WebAssembly SQLite engine.',
+      nativeErr instanceof Error ? nativeErr.message : nativeErr,
+    );
+  }
+
+  // 2. Fallback Engine: Pure WebAssembly SQLite (sql.js) for Node 18/20 serverless containers
+  const sqlJsMod = await import('sql.js');
+  const initSqlJs = (sqlJsMod.default ?? sqlJsMod) as unknown as (config?: {
+    wasmBinary?: Uint8Array;
+  }) => Promise<{
+    Database: new (data?: ArrayLike<number> | Buffer | null) => {
+      run(sql: string, params?: unknown[]): void;
+      exec(sql: string): unknown[];
+      prepare(sql: string): {
+        bind(values?: unknown[]): boolean;
+        step(): boolean;
+        getAsObject(): Record<string, unknown>;
+        free(): boolean;
+      };
+      getRowsModified(): number;
+      export(): Uint8Array;
+    };
+  }>;
+
+  const wasmCandidates = [
+    path.resolve(process.cwd(), 'node_modules/sql.js/dist/sql-wasm.wasm'),
+    path.resolve('/var/task/node_modules/sql.js/dist/sql-wasm.wasm'),
+  ];
+  let wasmBinary: Uint8Array | undefined;
+  for (const candidate of wasmCandidates) {
+    if (fs.existsSync(candidate)) {
+      wasmBinary = fs.readFileSync(candidate);
+      break;
+    }
+  }
+
+  const SQL = await initSqlJs(wasmBinary ? { wasmBinary } : undefined);
+  const initialBytes = fs.existsSync(filePath) ? fs.readFileSync(filePath) : null;
+  const wasmDb = new SQL.Database(initialBytes && initialBytes.length > 0 ? initialBytes : null);
+
+  let inTransaction = false;
+
+  const persistToDisk = () => {
+    try {
+      const dir = path.dirname(filePath);
+      fs.mkdirSync(dir, { recursive: true });
+      const exported = Buffer.from(wasmDb.export());
+      const tmpPath = `${filePath}.tmp.${process.pid}`;
+      fs.writeFileSync(tmpPath, exported);
+      fs.renameSync(tmpPath, filePath);
+    } catch (persistErr) {
+      console.warn('Warning: unable to flush sql.js database to disk:', persistErr);
+    }
+  };
+
+  const normalizeBindParams = (params: unknown[]): unknown[] =>
+    params.map((p) => (p === undefined ? null : typeof p === 'bigint' ? Number(p) : p));
+
+  return {
+    engine: 'sql.js',
+    exec: (sql: string) => {
+      const upper = sql.trim().toUpperCase();
+      if (upper.startsWith('PRAGMA WAL_CHECKPOINT')) {
+        persistToDisk();
+        return;
+      }
+      if (upper.startsWith('BEGIN')) {
+        const normalizedBegin = sql.replace(/BEGIN\s+IMMEDIATE(\s+TRANSACTION)?/gi, 'BEGIN TRANSACTION');
+        wasmDb.run(normalizedBegin);
+        inTransaction = true;
+        return;
+      }
+      if (upper.startsWith('COMMIT') || upper.startsWith('END TRANSACTION')) {
+        wasmDb.run('COMMIT');
+        inTransaction = false;
+        persistToDisk();
+        return;
+      }
+      if (upper.startsWith('ROLLBACK')) {
+        try {
+          wasmDb.run('ROLLBACK');
+        } finally {
+          inTransaction = false;
+        }
+        return;
+      }
+      wasmDb.run(sql);
+      if (!inTransaction && !upper.startsWith('PRAGMA ')) {
+        persistToDisk();
+      }
+    },
+    prepare: (sql: string): SqliteStatementLike => ({
+      get: (...params: unknown[]) => {
+        const stmt = wasmDb.prepare(sql);
+        try {
+          const bound = normalizeBindParams(params);
+          if (bound.length > 0) stmt.bind(bound);
+          if (stmt.step()) {
+            return stmt.getAsObject();
+          }
+          return undefined;
+        } finally {
+          stmt.free();
+        }
+      },
+      all: (...params: unknown[]) => {
+        const stmt = wasmDb.prepare(sql);
+        const rows: Record<string, unknown>[] = [];
+        try {
+          const bound = normalizeBindParams(params);
+          if (bound.length > 0) stmt.bind(bound);
+          while (stmt.step()) {
+            rows.push(stmt.getAsObject());
+          }
+          return rows;
+        } finally {
+          stmt.free();
+        }
+      },
+      run: (...params: unknown[]) => {
+        const bound = normalizeBindParams(params);
+        wasmDb.run(sql, bound);
+        const changes = wasmDb.getRowsModified();
+        if (!inTransaction) {
+          persistToDisk();
+        }
+        return { changes };
+      },
+    }),
+    exportSnapshot: (targetPath: string) => {
+      fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+      fs.writeFileSync(targetPath, Buffer.from(wasmDb.export()));
+    },
+    flushToDisk: persistToDisk,
+  };
+}
+
+function initializeDatabaseSchema(): void {
+  if (db.engine === 'node:sqlite') {
+    db.exec(`
+      PRAGMA journal_mode = WAL;
+      PRAGMA synchronous = FULL;
+      PRAGMA busy_timeout = 5000;
+    `);
+  }
+  db.exec(`
+    PRAGMA foreign_keys = ON;
 
   CREATE TABLE IF NOT EXISTS orders (
     order_number TEXT PRIMARY KEY,
@@ -469,7 +693,19 @@ db.exec(`
   );
 `);
 
-// Safe idempotent column migrations for existing databases
+  // Safe idempotent column migrations for existing databases
+  ensureColumnExists('orders', 'idempotency_key', 'TEXT');
+  ensureColumnExists('orders', 'fingerprint_hash', 'TEXT');
+  ensureColumnExists('orders', 'stock_deducted', 'INTEGER NOT NULL DEFAULT 1');
+  ensureColumnExists('product_overrides', 'low_stock_threshold', 'INTEGER DEFAULT 10');
+  ensureColumnExists('admin_sessions', 'username', "TEXT NOT NULL DEFAULT ''");
+
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_idempotency ON orders(idempotency_key) WHERE idempotency_key IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_orders_fingerprint ON orders(fingerprint_hash, created_at_ms DESC);
+  `);
+}
+
 function ensureColumnExists(table: string, column: string, definition: string): void {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all() as unknown as { name: string }[];
   if (!cols.some((c) => c.name === column)) {
@@ -477,18 +713,12 @@ function ensureColumnExists(table: string, column: string, definition: string): 
   }
 }
 
-ensureColumnExists('orders', 'idempotency_key', 'TEXT');
-ensureColumnExists('orders', 'fingerprint_hash', 'TEXT');
-ensureColumnExists('orders', 'stock_deducted', 'INTEGER NOT NULL DEFAULT 1');
-ensureColumnExists('product_overrides', 'low_stock_threshold', 'INTEGER DEFAULT 10');
-ensureColumnExists('admin_sessions', 'username', "TEXT NOT NULL DEFAULT ''");
-
-db.exec(`
-  CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_idempotency ON orders(idempotency_key) WHERE idempotency_key IS NOT NULL;
-  CREATE INDEX IF NOT EXISTS idx_orders_fingerprint ON orders(fingerprint_hash, created_at_ms DESC);
-`);
-
 function checkpointDatabase(): void {
+  if (!db) return;
+  if (db.flushToDisk) {
+    db.flushToDisk();
+    return;
+  }
   try {
     db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
   } catch {
@@ -549,15 +779,25 @@ function seedInitialStoreConfiguration(): void {
 
   // Provision / sync secure bcrypt-hashed admin account
   const nowIso = new Date().toISOString();
-  const envAdminUsername = (process.env.ADMIN_USERNAME || '')
-    .trim()
+  const rawEnvUsername = stripSurroundingQuotes(process.env.ADMIN_USERNAME || '')
     .toLowerCase()
     .replace(/^@+/, '');
-  const envPasswordHash = (process.env.ADMIN_PASSWORD_HASH || '').trim();
-  const envInitialPassword = process.env.ADMIN_INITIAL_PASSWORD || '';
+  const envPasswordHash = normalizeBcryptHashFromEnv(process.env.ADMIN_PASSWORD_HASH);
+  const envInitialPassword = stripSurroundingQuotes(process.env.ADMIN_INITIAL_PASSWORD || '');
+  const hasValidEnvHash = /^\$2[ab]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(envPasswordHash);
+  const hasValidEnvInitialPwd = envInitialPassword.length >= 6;
   const requireManualActivation = process.env.ADMIN_REQUIRE_ACTIVATION === 'true';
 
-  if (envAdminUsername && /^\$2[aby]\$\d{2}\$.{53}$/.test(envPasswordHash)) {
+  // Only honor ADMIN_USERNAME from env when paired with a valid bcrypt hash or initial password
+  const effectiveEnvUsername =
+    rawEnvUsername && (hasValidEnvHash || hasValidEnvInitialPwd) ? rawEnvUsername : '';
+
+  // Retire legacy previous username ('usman122') now that owner username is 'zn8xc'
+  if (effectiveEnvUsername !== 'usman122') {
+    db.prepare(`DELETE FROM admin_users WHERE username = 'usman122'`).run();
+  }
+
+  if (effectiveEnvUsername && hasValidEnvHash) {
     db.prepare(
       `INSERT INTO admin_users (
         username, password_hash, role, is_active, failed_attempts, locked_until_ms, created_at_iso, updated_at_iso
@@ -568,45 +808,68 @@ function seedInitialStoreConfiguration(): void {
         failed_attempts = 0,
         locked_until_ms = 0,
         updated_at_iso = excluded.updated_at_iso`,
-    ).run(envAdminUsername, envPasswordHash, nowIso, nowIso);
-  } else if (envAdminUsername && envInitialPassword.length >= 6) {
+    ).run(effectiveEnvUsername, envPasswordHash, nowIso, nowIso);
+  } else if (effectiveEnvUsername && hasValidEnvInitialPwd) {
     const existingEnvAdmin = db
       .prepare('SELECT username FROM admin_users WHERE username = ?')
-      .get(envAdminUsername);
+      .get(effectiveEnvUsername);
     if (!existingEnvAdmin) {
       const hashed = bcrypt.hashSync(envInitialPassword, BCRYPT_ROUNDS);
       db.prepare(
         `INSERT INTO admin_users (
           username, password_hash, role, is_active, failed_attempts, locked_until_ms, created_at_iso, updated_at_iso
         ) VALUES (?, ?, 'owner', ?, 0, 0, ?, ?)`,
-      ).run(envAdminUsername, hashed, requireManualActivation ? 0 : 1, nowIso, nowIso);
+      ).run(effectiveEnvUsername, hashed, requireManualActivation ? 0 : 1, nowIso, nowIso);
     }
   }
 
-  // Always ensure primary owner account exists and clear stale lockouts/legacy sessions on boot
-  db.prepare(
-    `INSERT OR IGNORE INTO admin_users (
-      username, password_hash, role, is_active, failed_attempts, locked_until_ms, created_at_iso, updated_at_iso
-    ) VALUES (?, ?, 'owner', ?, 0, 0, ?, ?)`,
-  ).run(
-    INITIAL_ADMIN_USERNAME,
-    INITIAL_ADMIN_BCRYPT_HASH,
-    requireManualActivation ? 0 : 1,
-    nowIso,
-    nowIso,
-  );
+  // Ensure an owner account exists (defaults to 'zn8xc' with salted bcrypt hash if no custom owner is active)
+  const existingOwnerCount = db
+    .prepare('SELECT COUNT(*) AS cnt FROM admin_users')
+    .get() as { cnt: number } | undefined;
 
-  if (!requireManualActivation) {
+  if (Number(existingOwnerCount?.cnt ?? 0) === 0) {
     db.prepare(
-      `UPDATE admin_users SET is_active = 1, failed_attempts = 0, locked_until_ms = 0 WHERE username = ?`,
-    ).run(INITIAL_ADMIN_USERNAME);
+      `INSERT INTO admin_users (
+        username, password_hash, role, is_active, failed_attempts, locked_until_ms, created_at_iso, updated_at_iso
+      ) VALUES (?, ?, 'owner', ?, 0, 0, ?, ?)`,
+    ).run(
+      INITIAL_ADMIN_USERNAME,
+      INITIAL_ADMIN_BCRYPT_HASH,
+      requireManualActivation ? 0 : 1,
+      nowIso,
+      nowIso,
+    );
+  } else if (!requireManualActivation) {
+    db.prepare(
+      `UPDATE admin_users SET is_active = 1, failed_attempts = 0, locked_until_ms = 0`,
+    ).run();
   }
-  db.prepare(`DELETE FROM admin_sessions WHERE username = '' OR username IS NULL`).run();
+
+  // Purge sessions for any deleted or inactive accounts
+  db.prepare(
+    `DELETE FROM admin_sessions
+     WHERE username = '' OR username IS NULL
+        OR username NOT IN (SELECT username FROM admin_users WHERE is_active = 1)`,
+  ).run();
 
   checkpointDatabase();
 }
 
-seedInitialStoreConfiguration();
+export async function ensureDatabaseReady(): Promise<void> {
+  if (db) return;
+  if (!dbInitPromise) {
+    dbInitPromise = (async () => {
+      db = await openCompatibleSqliteDatabase(dbFilePath);
+      initializeDatabaseSchema();
+      seedInitialStoreConfiguration();
+    })().catch((err) => {
+      dbInitPromise = null;
+      throw err;
+    });
+  }
+  await dbInitPromise;
+}
 
 // ============================================================================
 // CRYPTO, PHONE VERIFICATION & AUTH HELPERS
@@ -1420,9 +1683,13 @@ function createDatabaseBackup(tag = 'manual'): BackupDto {
   const filename = `norva_backup_${stamp}_${safeTag}.sqlite`;
   const targetPath = path.join(backupsDir, filename);
 
-  // Escape single quotes in file path for SQLite VACUUM INTO
-  const escapedTarget = targetPath.replace(/'/g, "''");
-  db.exec(`VACUUM INTO '${escapedTarget}'`);
+  if (db.exportSnapshot) {
+    db.exportSnapshot(targetPath);
+  } else {
+    // Escape single quotes in file path for SQLite VACUUM INTO
+    const escapedTarget = targetPath.replace(/'/g, "''");
+    db.exec(`VACUUM INTO '${escapedTarget}'`);
+  }
 
   // Prune older snapshots beyond MAX_BACKUPS_RETAINED
   const all = listBackups();
@@ -1490,7 +1757,7 @@ function broadcastToAdmins(eventPayload: Record<string, unknown>): void {
 // ============================================================================
 // EXPRESS APPLICATION & ROUTES
 // ============================================================================
-async function startServer(): Promise<void> {
+export function createExpressApp(): express.Express {
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '1mb' }));
@@ -1505,6 +1772,39 @@ async function startServer(): Promise<void> {
       return;
     }
     next(err);
+  });
+
+  // Lightweight health probe for checkout keep-alive & deployment diagnostics
+  app.get('/api/health', async (_req: Request, res: Response) => {
+    try {
+      await ensureDatabaseReady();
+      res.json({
+        ok: true,
+        status: 'ok',
+        engine: db.engine,
+        persistentStorage: !isEphemeralFallback,
+      });
+    } catch (err) {
+      console.error('Health check DB error:', err);
+      res.status(500).json({
+        ok: false,
+        error: 'Database initialization failed.',
+      });
+    }
+  });
+
+  // Guarantee SQLite database & schema are ready before handling any /api route
+  app.use('/api', async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      await ensureDatabaseReady();
+      next();
+    } catch (err) {
+      console.error('Database initialization failure:', err);
+      res.status(500).json({
+        ok: false,
+        error: 'Unable to connect to the NORVA order database right now. Please try again shortly.',
+      });
+    }
   });
 
   // --------------------------------------------------------------------------
@@ -1732,28 +2032,63 @@ async function startServer(): Promise<void> {
         }
       }
 
+      const rawPaymentMethod =
+        typeof body.paymentMethod === 'string' ? body.paymentMethod.trim().toLowerCase() : 'cod';
+      if (rawPaymentMethod !== 'cod' && rawPaymentMethod !== 'invoice') {
+        res.status(400).json({
+          ok: false,
+          error: 'Unsupported payment method selected. Please choose Cash on Delivery or Bank Transfer.',
+        });
+        return;
+      }
+      const paymentMethod: 'cod' | 'invoice' = rawPaymentMethod === 'invoice' ? 'invoice' : 'cod';
+
       const fullName = String(customerInput.fullName ?? '').trim();
       const email = String(customerInput.email ?? '').trim();
       const phone = String(customerInput.phone ?? '').trim();
       const address = String(customerInput.address ?? '').trim();
       const city = String(customerInput.city ?? '').trim();
-      const postalCode = String(customerInput.postalCode ?? '').trim();
-      const country = String(customerInput.country ?? 'Pakistan').trim() || 'Pakistan';
+      const postalCode = String(customerInput.postalCode ?? '').trim().slice(0, 30);
+      const country = String(customerInput.country ?? 'Pakistan').trim().slice(0, 80) || 'Pakistan';
       const phoneDigits = normalizePhoneDigits(phone);
 
-      if (!fullName || !email || !email.includes('@') || !phone || !address || !city) {
+      if (fullName.length < 2 || fullName.length > 120) {
         res.status(400).json({
           ok: false,
-          error:
-            'Please provide a valid full name, email address, phone number, street address, and city.',
+          error: 'Please enter the recipient’s full name.',
         });
         return;
       }
 
-      if (phoneDigits.length < 7) {
+      if (email.length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         res.status(400).json({
           ok: false,
-          error: 'Please enter a valid 10 or 11-digit mobile/WhatsApp phone number.',
+          error:
+            'Please enter a valid email address, or leave the email field blank for Cash on Delivery.',
+        });
+        return;
+      }
+
+      if (phoneDigits.length < 7 || phoneDigits.length > 15) {
+        res.status(400).json({
+          ok: false,
+          error: 'Please enter a valid 10 or 11-digit mobile / WhatsApp phone number (e.g. 0300-1234567).',
+        });
+        return;
+      }
+
+      if (address.length < 4 || address.length > 400) {
+        res.status(400).json({
+          ok: false,
+          error: 'Please enter your complete street and house delivery address.',
+        });
+        return;
+      }
+
+      if (city.length < 2 || city.length > 100) {
+        res.status(400).json({
+          ok: false,
+          error: 'Please select or enter your delivery city.',
         });
         return;
       }
@@ -1767,30 +2102,61 @@ async function startServer(): Promise<void> {
       }
 
       const overrides = getProductOverridesMap();
+      const catalogById = new Map(CATALOG_DEFAULTS.map((c) => [c.id, c]));
       const sanitizedItems: OrderItemRecord[] = [];
       const qtyByProductId = new Map<string, { qty: number; name: string }>();
 
       for (const raw of rawItems) {
+        if (!raw || typeof raw !== 'object') {
+          res.status(400).json({
+            ok: false,
+            error: 'Invalid item format in shopping bag. Please refresh and try again.',
+          });
+          return;
+        }
         const productId = String(raw.productId ?? '').trim();
-        const name = String(raw.name ?? '').trim();
-        const quantity = Math.max(1, Math.min(99, Math.floor(Number(raw.quantity) || 1)));
-        const fallbackUnitPrice = Math.max(100, Math.round(Number(raw.unitPrice) || 2500));
-        const unitPrice = overrides[productId]?.price ?? fallbackUnitPrice;
+        const catalogProduct = catalogById.get(productId);
+        if (!catalogProduct) {
+          res.status(400).json({
+            ok: false,
+            error:
+              'One or more items in your bag are out of date. Please clear your bag, re-add your fragrance, and confirm again.',
+          });
+          return;
+        }
 
-        if (!productId || !name) continue;
+        const parsedQty = Number(raw.quantity);
+        if (!Number.isFinite(parsedQty) || Math.floor(parsedQty) < 1 || Math.floor(parsedQty) > 99) {
+          res.status(400).json({
+            ok: false,
+            error: `Invalid quantity for ${catalogProduct.name}. Please choose between 1 and 99 flacons.`,
+          });
+          return;
+        }
 
+        const quantity = Math.floor(parsedQty);
+        const unitPrice = overrides[productId]?.price ?? catalogProduct.defaultPrice;
+        if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
+          res.status(400).json({
+            ok: false,
+            error: `Invalid price configuration for ${catalogProduct.name}.`,
+          });
+          return;
+        }
+
+        const name = catalogProduct.name;
         const prevQty = qtyByProductId.get(productId)?.qty ?? 0;
         qtyByProductId.set(productId, { qty: prevQty + quantity, name });
 
         sanitizedItems.push({
-          key: String(raw.key ?? `${productId}__default`),
+          key: String(raw.key ?? `${productId}__default`).slice(0, 120),
           productId,
-          slug: String(raw.slug ?? productId),
+          slug: String(raw.slug ?? productId).slice(0, 120),
           name,
-          concentration: String(raw.concentration ?? 'Extrait de Parfum'),
-          image: String(raw.image ?? ''),
-          sizeLabel: String(raw.sizeLabel ?? '50ml'),
-          sizeSku: String(raw.sizeSku ?? `${productId.toUpperCase()}-50`),
+          concentration: String(raw.concentration ?? 'Extrait de Parfum').slice(0, 80),
+          image: typeof raw.image === 'string' && raw.image.length <= 2048 ? raw.image : '',
+          sizeLabel: String(raw.sizeLabel ?? '50ml').slice(0, 40),
+          sizeSku: String(raw.sizeSku ?? `${productId.toUpperCase()}-50`).slice(0, 60),
           unitPrice,
           quantity,
         });
@@ -1808,6 +2174,14 @@ async function startServer(): Promise<void> {
         (sum, item) => sum + item.unitPrice * item.quantity,
         0,
       );
+
+      if (!Number.isFinite(subtotal) || subtotal <= 0) {
+        res.status(400).json({
+          ok: false,
+          error: 'Invalid order subtotal. Please review your shopping bag and try again.',
+        });
+        return;
+      }
 
       // Validate Coupon if provided
       const rawCoupon =
@@ -1828,15 +2202,30 @@ async function startServer(): Promise<void> {
         discountAmount = couponEval.discountAmount;
       }
 
-      // Calculate City-Based Shipping Cost
+      // Validate Shipping Speed & Calculate City-Based Shipping Cost
+      const rawShippingSpeed =
+        typeof body.shippingSpeed === 'string' ? body.shippingSpeed.trim().toLowerCase() : 'standard';
+      if (rawShippingSpeed !== 'standard' && rawShippingSpeed !== 'express') {
+        res.status(400).json({
+          ok: false,
+          error: 'Invalid delivery method selected. Please choose Standard or Express shipping.',
+        });
+        return;
+      }
       const shippingSpeed: 'standard' | 'express' =
-        body.shippingSpeed === 'express' ? 'express' : 'standard';
+        rawShippingSpeed === 'express' ? 'express' : 'standard';
       const shippingCalc = calculateShippingForCity(city, shippingSpeed, subtotal);
-      const shippingCost = shippingCalc.cost;
+      const shippingCost = Math.max(0, Math.round(shippingCalc.cost));
 
       const total = Math.max(0, subtotal - discountAmount + shippingCost);
-      const paymentMethod: 'cod' | 'invoice' =
-        body.paymentMethod === 'invoice' ? 'invoice' : 'cod';
+      if (!Number.isFinite(total) || total < 0) {
+        res.status(400).json({
+          ok: false,
+          error: 'Unable to calculate order total. Please verify your bag and shipping selection.',
+        });
+        return;
+      }
+
       const giftNote =
         typeof body.giftNote === 'string' && body.giftNote.trim()
           ? body.giftNote.trim().slice(0, 500)
@@ -2148,8 +2537,12 @@ async function startServer(): Promise<void> {
   // --------------------------------------------------------------------------
   // ADMIN AUTHENTICATION, ACTIVATION & BLANKET ROUTE GUARD
   // --------------------------------------------------------------------------
-  // Blanket guard: protect EVERY /api/admin/* route except login, logout, and secret-gated activate
+  // Blanket guard: protect EVERY /api/admin/* route except auth-status, login, logout, and secret-gated activate
   app.use('/api/admin', (req: Request, res: Response, next: NextFunction) => {
+    if (req.method === 'GET' && req.path === '/auth-status') {
+      next();
+      return;
+    }
     if (
       req.method === 'POST' &&
       (req.path === '/login' || req.path === '/logout' || req.path === '/activate')
@@ -2158,6 +2551,29 @@ async function startServer(): Promise<void> {
       return;
     }
     requireAdminAuth(req, res, next);
+  });
+
+  // Safe non-sensitive diagnostic endpoint (never exposes usernames, hashes, or tokens)
+  app.get('/api/admin/auth-status', (_req: Request, res: Response) => {
+    const ownerStats = db
+      .prepare(
+        `SELECT COUNT(*) AS totalCount,
+                SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) AS activeCount
+         FROM admin_users`,
+      )
+      .get() as { totalCount: number; activeCount: number | null } | undefined;
+
+    const configuredSetupToken = stripSurroundingQuotes(process.env.ADMIN_SETUP_TOKEN || '');
+    const envHash = normalizeBcryptHashFromEnv(process.env.ADMIN_PASSWORD_HASH);
+
+    res.json({
+      ok: true,
+      accountInitialized: Number(ownerStats?.totalCount ?? 0) > 0,
+      accountActive: Number(ownerStats?.activeCount ?? 0) > 0,
+      setupTokenConfigured: configuredSetupToken.length >= 8,
+      envHashConfigured: /^\$2[ab]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(envHash),
+      persistentStorage: !isEphemeralFallback,
+    });
   });
 
   // Server-side bcrypt login with per-IP rate limiting & per-account brute-force lockout
@@ -2315,27 +2731,28 @@ async function startServer(): Promise<void> {
   // One-time / Secret-Gated Admin Account Activation & Credential Provisioning
   app.post('/api/admin/activate', async (req: Request, res: Response) => {
     try {
-      const configuredSetupToken = (process.env.ADMIN_SETUP_TOKEN || '').trim();
+      const configuredSetupToken = stripSurroundingQuotes(process.env.ADMIN_SETUP_TOKEN || '');
       if (!configuredSetupToken || configuredSetupToken.length < 8) {
         res.status(403).json({
           ok: false,
           error:
-            'Activation endpoint is locked. Configure ADMIN_SETUP_TOKEN (at least 8 characters) in server Secrets to run remote activation.',
+            'Owner setup/reset is locked. Set ADMIN_SETUP_TOKEN (at least 8 characters) in Server Secrets first.',
         });
         return;
       }
 
-      const providedSetupToken = String(req.headers['x-setup-token'] ?? '').trim();
+      const providedSetupToken = stripSurroundingQuotes(
+        String(req.headers['x-setup-token'] ?? req.body?.setupToken ?? ''),
+      );
       if (!safeCompareSecret(providedSetupToken, configuredSetupToken)) {
         res.status(401).json({
           ok: false,
-          error: 'Invalid setup token.',
+          error: 'Invalid setup token. Verify ADMIN_SETUP_TOKEN in Server Secrets.',
         });
         return;
       }
 
-      const username = String(req.body?.username ?? '')
-        .trim()
+      const username = stripSurroundingQuotes(String(req.body?.username ?? ''))
         .toLowerCase()
         .replace(/^@+/, '');
       const password = String(req.body?.password ?? '');
@@ -2358,6 +2775,10 @@ async function startServer(): Promise<void> {
       const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
       const nowIso = new Date().toISOString();
 
+      if (req.body?.replaceExistingOwners !== false) {
+        db.prepare(`DELETE FROM admin_users WHERE role = 'owner' AND username != ?`).run(username);
+      }
+
       db.prepare(
         `INSERT INTO admin_users (
           username, password_hash, role, is_active, failed_attempts, locked_until_ms, created_at_iso, updated_at_iso
@@ -2370,14 +2791,14 @@ async function startServer(): Promise<void> {
           updated_at_iso = excluded.updated_at_iso`,
       ).run(username, passwordHash, nowIso, nowIso);
 
-      // Invalidate any older sessions for this username on activation/reset
-      db.prepare('DELETE FROM admin_sessions WHERE username = ?').run(username);
+      // Invalidate all existing admin sessions upon owner reset/activation
+      db.prepare('DELETE FROM admin_sessions').run();
       checkpointDatabase();
 
       res.json({
         ok: true,
         username,
-        message: `Admin account '${username}' activated with bcrypt (cost ${BCRYPT_ROUNDS}) hashing.`,
+        message: `Owner account '${username}' initialized and activated with salted bcrypt (cost ${BCRYPT_ROUNDS}).`,
       });
     } catch (err) {
       console.error('Admin activation error:', err);
@@ -3127,20 +3548,24 @@ async function startServer(): Promise<void> {
     });
   });
 
-  // --------------------------------------------------------------------------
-  // VITE DEV MIDDLEWARE / PRODUCTION STATIC ASSETS
-  // --------------------------------------------------------------------------
+  return app;
+}
+
+async function startServer(): Promise<void> {
+  await ensureDatabaseReady();
+  const app = createExpressApp();
   const httpServer = createServer(app);
 
   if (process.env.NODE_ENV !== 'production') {
-    const { createServer: createViteServer } = await import('vite');
+    const viteModuleId = 'vite';
+    const { createServer: createViteServer } = await import(viteModuleId);
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.resolve(__dirname, 'dist');
+    const distPath = path.resolve(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*', (_req: Request, res: Response) => {
       res.sendFile(path.join(distPath, 'index.html'));
@@ -3196,11 +3621,17 @@ async function startServer(): Promise<void> {
   });
 
   httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`NORVA server listening on http://0.0.0.0:${PORT} (SQLite: ${dbFilePath})`);
+    console.log(
+      `NORVA server listening on http://0.0.0.0:${PORT} (SQLite: ${dbFilePath}${
+        isEphemeralFallback ? ' [EPHEMERAL TMP]' : ''
+      })`,
+    );
   });
 }
 
-startServer().catch((err) => {
-  console.error('Fatal server startup error:', err);
-  process.exit(1);
-});
+if (!process.env.VERCEL) {
+  startServer().catch((err) => {
+    console.error('Fatal server startup error:', err);
+    process.exit(1);
+  });
+}
