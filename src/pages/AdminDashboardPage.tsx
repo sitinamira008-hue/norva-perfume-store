@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -124,6 +124,7 @@ export const AdminDashboardPage: React.FC = () => {
     activateOrResetAdmin,
     changeAdminPassword,
     logoutAdmin,
+    ensureAdminSessionChecked,
     products,
     lowStockProducts,
     adminOrders,
@@ -194,6 +195,10 @@ export const AdminDashboardPage: React.FC = () => {
   const [phoneFilter, setPhoneFilter] = useState('');
   const [orderStatusFilter, setOrderStatusFilter] = useState<'All' | 'New' | OrderStatus>('All');
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<'All' | PaymentStatus>('All');
+  const [visibleOrdersLimit, setVisibleOrdersLimit] = useState(25);
+
+  const deferredOrderIdSearch = useDeferredValue(orderIdSearch);
+  const deferredPhoneFilter = useDeferredValue(phoneFilter);
 
   // Individual Order Details Modal State
   const [selectedOrderNumber, setSelectedOrderNumber] = useState<string | null>(null);
@@ -256,6 +261,14 @@ export const AdminDashboardPage: React.FC = () => {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [selectedOrder]);
+
+  useEffect(() => {
+    ensureAdminSessionChecked();
+  }, [ensureAdminSessionChecked]);
+
+  useEffect(() => {
+    setVisibleOrdersLimit(25);
+  }, [deferredOrderIdSearch, deferredPhoneFilter, orderStatusFilter, paymentStatusFilter]);
 
   useEffect(() => {
     if (adminSession) return;
@@ -408,11 +421,11 @@ export const AdminDashboardPage: React.FC = () => {
     [adminOrders.length, unseenOrderCount, metrics],
   );
 
-  // Filtered Orders (strictly newest at the top)
+  // Filtered Orders (strictly newest at the top, deferred for zero typing lag)
   const filteredOrders = useMemo(() => {
-    const idQuery = orderIdSearch.trim().toLowerCase();
-    const rawPhoneQuery = phoneFilter.trim().toLowerCase();
-    const phoneDigitsQuery = phoneFilter.replace(/\D+/g, '');
+    const idQuery = deferredOrderIdSearch.trim().toLowerCase();
+    const rawPhoneQuery = deferredPhoneFilter.trim().toLowerCase();
+    const phoneDigitsQuery = deferredPhoneFilter.replace(/\D+/g, '');
 
     return adminOrders.filter((ord) => {
       const currentStatus = ord.status ?? 'Pending';
@@ -443,7 +456,18 @@ export const AdminDashboardPage: React.FC = () => {
 
       return true;
     });
-  }, [adminOrders, orderIdSearch, phoneFilter, orderStatusFilter, paymentStatusFilter]);
+  }, [
+    adminOrders,
+    deferredOrderIdSearch,
+    deferredPhoneFilter,
+    orderStatusFilter,
+    paymentStatusFilter,
+  ]);
+
+  const visibleOrders = useMemo(
+    () => filteredOrders.slice(0, visibleOrdersLimit),
+    [filteredOrders, visibleOrdersLimit],
+  );
 
   const newestUnseenOrder = useMemo(
     () => adminOrders.find((o) => o.isNew) ?? null,
@@ -1394,7 +1418,7 @@ export const AdminDashboardPage: React.FC = () => {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {filteredOrders.map((ord) => {
+                    {visibleOrders.map((ord) => {
                       const currentStatus = ord.status ?? 'Pending';
                       const currentPayment = ord.paymentStatus ?? 'Pending';
                       const totalItemsQty = ord.items.reduce((s, i) => s + i.quantity, 0);
@@ -1404,7 +1428,7 @@ export const AdminDashboardPage: React.FC = () => {
                           key={ord.orderNumber}
                           className={`p-4 sm:p-6 rounded-xl bg-[#0a0a0f] border transition-colors space-y-4 ${
                             ord.isNew
-                              ? 'border-[#36d67e]/50 shadow-[0_0_28px_rgba(54,214,126,0.08)]'
+                              ? 'border-[#36d67e]/55'
                               : 'border-white/[0.08]'
                           }`}
                         >
@@ -1651,6 +1675,19 @@ export const AdminDashboardPage: React.FC = () => {
                         </div>
                       );
                     })}
+
+                    {filteredOrders.length > visibleOrders.length && (
+                      <div className="pt-2 text-center">
+                        <button
+                          type="button"
+                          onClick={() => setVisibleOrdersLimit((n) => n + 25)}
+                          className="h-10 px-5 rounded-lg bg-[#0d0d14] hover:bg-white/[0.08] border border-white/15 text-xs font-medium text-[#f2e6d5] cursor-pointer"
+                        >
+                          Show Next {Math.min(25, filteredOrders.length - visibleOrders.length)}{' '}
+                          Orders ({visibleOrders.length} of {filteredOrders.length} shown)
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

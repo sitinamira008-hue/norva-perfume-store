@@ -5,17 +5,27 @@ import { createServer } from 'node:http';
 import type { IncomingMessage } from 'node:http';
 import path from 'node:path';
 import os from 'node:os';
+import zlib from 'node:zlib';
 import bcrypt from 'bcryptjs';
 import express from 'express';
 import type { NextFunction, Request, Response } from 'express';
 import { WebSocket, WebSocketServer } from 'ws';
 
+import { initDatabase, type DatabaseAdapter } from './src/server/db';
+import {
+  initializeDatabaseSchema,
+  seedInitialStoreConfiguration,
+  migrateFromLegacySqliteIfEmpty,
+  DEFAULT_ADMIN_USERNAME,
+  DEFAULT_ADMIN_BCRYPT_HASH,
+  CATALOG_DEFAULTS,
+  DEFAULT_SHIPPING_RATES,
+  DEFAULT_COUPONS,
+} from './src/server/schema';
+
 const PORT = Number(process.env.PORT || 3000);
 const BCRYPT_ROUNDS = 12;
-// Pre-computed salted bcrypt (cost 12) digest — plaintext password is NEVER stored in code or DB
-const INITIAL_ADMIN_USERNAME = 'zn8xc';
-const INITIAL_ADMIN_BCRYPT_HASH =
-  '$2b$12$cKHO2DOza39ETn.nDLpHw.P7aqqxQexiDQlJrCLvktOGtvG8lGpXu';
+
 // Dummy bcrypt hash used when username is not found to prevent timing enumeration
 const DUMMY_BCRYPT_HASH =
   '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
@@ -50,130 +60,6 @@ const VALID_ORDER_STATUSES = new Set<OrderStatus>([
 ]);
 
 const VALID_PAYMENT_STATUSES = new Set<PaymentStatus>(['Pending', 'Paid', 'Refunded']);
-
-const CATALOG_DEFAULTS: { id: string; name: string; defaultPrice: number }[] = [
-  { id: 'frag-01', name: 'Khamrah Qawa', defaultPrice: 2500 },
-  { id: 'frag-02', name: 'Cool Water', defaultPrice: 2500 },
-  { id: 'frag-03', name: '9mM Rebel', defaultPrice: 2500 },
-  { id: 'frag-04', name: 'Jadora', defaultPrice: 2500 },
-  { id: 'frag-05', name: 'Gucci Flora', defaultPrice: 2500 },
-];
-
-const DEFAULT_SHIPPING_RATES: {
-  cityKey: string;
-  cityName: string;
-  standardFee: number;
-  expressFee: number;
-  freeShippingThreshold: number;
-  estimatedDays: string;
-}[] = [
-  {
-    cityKey: 'karachi',
-    cityName: 'Karachi',
-    standardFee: 200,
-    expressFee: 400,
-    freeShippingThreshold: 5000,
-    estimatedDays: '1–2 Working Days',
-  },
-  {
-    cityKey: 'lahore',
-    cityName: 'Lahore',
-    standardFee: 250,
-    expressFee: 500,
-    freeShippingThreshold: 5000,
-    estimatedDays: '2–3 Working Days',
-  },
-  {
-    cityKey: 'islamabad',
-    cityName: 'Islamabad',
-    standardFee: 250,
-    expressFee: 500,
-    freeShippingThreshold: 5000,
-    estimatedDays: '2–3 Working Days',
-  },
-  {
-    cityKey: 'rawalpindi',
-    cityName: 'Rawalpindi',
-    standardFee: 250,
-    expressFee: 500,
-    freeShippingThreshold: 5000,
-    estimatedDays: '2–3 Working Days',
-  },
-  {
-    cityKey: 'faisalabad',
-    cityName: 'Faisalabad',
-    standardFee: 280,
-    expressFee: 550,
-    freeShippingThreshold: 5000,
-    estimatedDays: '2–4 Working Days',
-  },
-  {
-    cityKey: 'multan',
-    cityName: 'Multan',
-    standardFee: 280,
-    expressFee: 550,
-    freeShippingThreshold: 5000,
-    estimatedDays: '2–4 Working Days',
-  },
-  {
-    cityKey: 'peshawar',
-    cityName: 'Peshawar',
-    standardFee: 300,
-    expressFee: 600,
-    freeShippingThreshold: 5000,
-    estimatedDays: '3–4 Working Days',
-  },
-  {
-    cityKey: 'quetta',
-    cityName: 'Quetta',
-    standardFee: 350,
-    expressFee: 650,
-    freeShippingThreshold: 6000,
-    estimatedDays: '3–5 Working Days',
-  },
-  {
-    cityKey: '__default__',
-    cityName: 'Other Cities (Nationwide)',
-    standardFee: 300,
-    expressFee: 550,
-    freeShippingThreshold: 5000,
-    estimatedDays: '3–5 Working Days',
-  },
-];
-
-const DEFAULT_COUPONS: {
-  code: string;
-  discountType: DiscountType;
-  discountValue: number;
-  minOrderAmount: number;
-  maxUses: number | null;
-  description: string;
-}[] = [
-  {
-    code: 'NORVA15',
-    discountType: 'percentage',
-    discountValue: 15,
-    minOrderAmount: 0,
-    maxUses: null,
-    description: '15% NORVA Client Privilege',
-  },
-  {
-    code: 'NORVA10',
-    discountType: 'percentage',
-    discountValue: 10,
-    minOrderAmount: 0,
-    maxUses: null,
-    description: '10% Welcome Privilege',
-  },
-  {
-    code: 'ATELIER15',
-    discountType: 'percentage',
-    discountValue: 15,
-    minOrderAmount: 5000,
-    maxUses: null,
-    description: '15% Atelier Privilege (Orders PKR 5,000+)',
-  },
-];
 
 interface OrderItemRecord {
   key: string;
@@ -290,17 +176,60 @@ interface AdminUserRow {
   username: string;
   password_hash: string;
   role: string;
-  is_active: number;
-  failed_attempts: number;
-  locked_until_ms: number;
+  is_active: number | string;
+  failed_attempts: number | string;
+  locked_until_ms: number | string;
   created_at_iso: string;
   updated_at_iso: string;
   last_login_at_iso: string | null;
 }
 
-// ============================================================================
-// PERSISTENT SQLITE DATABASE & MIGRATIONS
-// ============================================================================
+interface RawOrderRow {
+  order_number: string;
+  lookup_token: string;
+  idempotency_key: string | null;
+  fingerprint_hash: string | null;
+  stock_deducted: number;
+  status: string;
+  payment_method: string;
+  payment_status: string;
+  shipping_speed: string;
+  subtotal: number;
+  discount_amount: number;
+  shipping_cost: number;
+  total: number;
+  coupon_code: string | null;
+  gift_note: string | null;
+  admin_notes: string | null;
+  customer_full_name: string;
+  customer_email: string;
+  customer_phone: string;
+  customer_phone_digits: string;
+  customer_address: string;
+  customer_city: string;
+  customer_postal_code: string;
+  customer_country: string;
+  is_seen_by_admin: number;
+  created_at: string;
+  created_at_iso: string;
+  created_at_ms: number | string;
+  updated_at_iso: string;
+}
+
+interface RawOrderItemRow {
+  order_number: string;
+  item_key: string;
+  product_id: string;
+  slug: string;
+  name: string;
+  concentration: string;
+  image: string;
+  size_label: string;
+  size_sku: string;
+  unit_price: number;
+  quantity: number;
+}
+
 function stripSurroundingQuotes(val: string): string {
   const trimmed = val.trim();
   if (
@@ -312,559 +241,42 @@ function stripSurroundingQuotes(val: string): string {
   return trimmed;
 }
 
-function normalizeBcryptHashFromEnv(raw: string | undefined): string {
-  if (!raw) return '';
-  const unquoted = stripSurroundingQuotes(raw).replace(/\\\$/g, '$');
-  if (unquoted.startsWith('$2y$')) {
-    return `$2b$${unquoted.slice(4)}`;
-  }
-  return unquoted;
-}
-
-function resolveWritableDatabasePaths(): {
-  dbFilePath: string;
-  backupsDir: string;
-  isEphemeralFallback: boolean;
-} {
-  const rawDbEnv = stripSurroundingQuotes(process.env.DATABASE_PATH || '');
-  const candidatePath = path.resolve(
-    process.cwd(),
-    rawDbEnv || 'data/norva_store.sqlite',
+function resolveBackupsDir(): string {
+  const isServerless = Boolean(
+    process.env.VERCEL || process.env.VERCEL_ENV || process.env.AWS_LAMBDA_FUNCTION_NAME,
   );
-
-  // On Vercel serverless, /var/task is read-only; fall back cleanly to /tmp unless /tmp was already specified
-  const mustUseTmp =
-    process.env.VERCEL === '1' && !candidatePath.startsWith(os.tmpdir());
-
-  if (!mustUseTmp) {
+  if (isServerless) {
+    const tmpBk = path.join(os.tmpdir(), 'norva_backups');
     try {
-      const dir = path.dirname(candidatePath);
-      const bkDir = path.resolve(dir, 'backups');
-      fs.mkdirSync(dir, { recursive: true });
-      fs.mkdirSync(bkDir, { recursive: true });
-      fs.accessSync(dir, fs.constants.W_OK);
-      return { dbFilePath: candidatePath, backupsDir: bkDir, isEphemeralFallback: false };
-    } catch (err) {
-      console.warn(
-        `Configured DATABASE_PATH (${candidatePath}) is not writable; falling back to temporary storage.`,
-        err,
-      );
-    }
+      fs.mkdirSync(tmpBk, { recursive: true });
+    } catch {}
+    return tmpBk;
   }
-
-  const tmpBase = path.join(os.tmpdir(), 'norva_data');
-  const fallbackDb = path.join(tmpBase, 'norva_store.sqlite');
-  const fallbackBackups = path.join(tmpBase, 'backups');
-  fs.mkdirSync(tmpBase, { recursive: true });
-  fs.mkdirSync(fallbackBackups, { recursive: true });
-  return { dbFilePath: fallbackDb, backupsDir: fallbackBackups, isEphemeralFallback: true };
+  const localBk = path.resolve(process.cwd(), 'data/backups');
+  try {
+    fs.mkdirSync(localBk, { recursive: true });
+  } catch {}
+  return localBk;
 }
 
-interface SqliteStatementLike {
-  get(...params: unknown[]): unknown;
-  all(...params: unknown[]): unknown[];
-  run(...params: unknown[]): { changes: number; lastInsertRowid?: number | bigint };
-}
+const backupsDir = resolveBackupsDir();
 
-interface SqliteDatabaseLike {
-  readonly engine: 'node:sqlite' | 'sql.js';
-  exec(sql: string): void;
-  prepare(sql: string): SqliteStatementLike;
-  exportSnapshot?(targetPath: string): void;
-  flushToDisk?(): void;
-}
-
-const { dbFilePath, backupsDir, isEphemeralFallback } = resolveWritableDatabasePaths();
-let db!: SqliteDatabaseLike;
+let db!: DatabaseAdapter;
 let dbInitPromise: Promise<void> | null = null;
-
-async function openCompatibleSqliteDatabase(filePath: string): Promise<SqliteDatabaseLike> {
-  // 1. Primary Engine: Native built-in node:sqlite (Node 22.5+, full WAL + ACID)
-  try {
-    const builtinModuleId = 'node:' + 'sqlite';
-    const sqliteMod = (await import(builtinModuleId)) as {
-      DatabaseSync: new (p: string) => {
-        exec(sql: string): void;
-        prepare(sql: string): SqliteStatementLike;
-      };
-    };
-    const nativeDb = new sqliteMod.DatabaseSync(filePath);
-    return {
-      engine: 'node:sqlite',
-      exec: (sql: string) => nativeDb.exec(sql),
-      prepare: (sql: string) => nativeDb.prepare(sql),
-    };
-  } catch (nativeErr) {
-    console.warn(
-      'Native node:sqlite unavailable on current Node runtime; activating sql.js WebAssembly SQLite engine.',
-      nativeErr instanceof Error ? nativeErr.message : nativeErr,
-    );
-  }
-
-  // 2. Fallback Engine: Pure WebAssembly SQLite (sql.js) for Node 18/20 serverless containers
-  const sqlJsMod = await import('sql.js');
-  const initSqlJs = (sqlJsMod.default ?? sqlJsMod) as unknown as (config?: {
-    wasmBinary?: Uint8Array;
-  }) => Promise<{
-    Database: new (data?: ArrayLike<number> | Buffer | null) => {
-      run(sql: string, params?: unknown[]): void;
-      exec(sql: string): unknown[];
-      prepare(sql: string): {
-        bind(values?: unknown[]): boolean;
-        step(): boolean;
-        getAsObject(): Record<string, unknown>;
-        free(): boolean;
-      };
-      getRowsModified(): number;
-      export(): Uint8Array;
-    };
-  }>;
-
-  const wasmCandidates = [
-    path.resolve(process.cwd(), 'node_modules/sql.js/dist/sql-wasm.wasm'),
-    path.resolve('/var/task/node_modules/sql.js/dist/sql-wasm.wasm'),
-  ];
-  let wasmBinary: Uint8Array | undefined;
-  for (const candidate of wasmCandidates) {
-    if (fs.existsSync(candidate)) {
-      wasmBinary = fs.readFileSync(candidate);
-      break;
-    }
-  }
-
-  const SQL = await initSqlJs(wasmBinary ? { wasmBinary } : undefined);
-  const initialBytes = fs.existsSync(filePath) ? fs.readFileSync(filePath) : null;
-  const wasmDb = new SQL.Database(initialBytes && initialBytes.length > 0 ? initialBytes : null);
-
-  let inTransaction = false;
-
-  const persistToDisk = () => {
-    try {
-      const dir = path.dirname(filePath);
-      fs.mkdirSync(dir, { recursive: true });
-      const exported = Buffer.from(wasmDb.export());
-      const tmpPath = `${filePath}.tmp.${process.pid}`;
-      fs.writeFileSync(tmpPath, exported);
-      fs.renameSync(tmpPath, filePath);
-    } catch (persistErr) {
-      console.warn('Warning: unable to flush sql.js database to disk:', persistErr);
-    }
-  };
-
-  const normalizeBindParams = (params: unknown[]): unknown[] =>
-    params.map((p) => (p === undefined ? null : typeof p === 'bigint' ? Number(p) : p));
-
-  return {
-    engine: 'sql.js',
-    exec: (sql: string) => {
-      const upper = sql.trim().toUpperCase();
-      if (upper.startsWith('PRAGMA WAL_CHECKPOINT')) {
-        persistToDisk();
-        return;
-      }
-      if (upper.startsWith('BEGIN')) {
-        const normalizedBegin = sql.replace(/BEGIN\s+IMMEDIATE(\s+TRANSACTION)?/gi, 'BEGIN TRANSACTION');
-        wasmDb.run(normalizedBegin);
-        inTransaction = true;
-        return;
-      }
-      if (upper.startsWith('COMMIT') || upper.startsWith('END TRANSACTION')) {
-        wasmDb.run('COMMIT');
-        inTransaction = false;
-        persistToDisk();
-        return;
-      }
-      if (upper.startsWith('ROLLBACK')) {
-        try {
-          wasmDb.run('ROLLBACK');
-        } finally {
-          inTransaction = false;
-        }
-        return;
-      }
-      wasmDb.run(sql);
-      if (!inTransaction && !upper.startsWith('PRAGMA ')) {
-        persistToDisk();
-      }
-    },
-    prepare: (sql: string): SqliteStatementLike => ({
-      get: (...params: unknown[]) => {
-        const stmt = wasmDb.prepare(sql);
-        try {
-          const bound = normalizeBindParams(params);
-          if (bound.length > 0) stmt.bind(bound);
-          if (stmt.step()) {
-            return stmt.getAsObject();
-          }
-          return undefined;
-        } finally {
-          stmt.free();
-        }
-      },
-      all: (...params: unknown[]) => {
-        const stmt = wasmDb.prepare(sql);
-        const rows: Record<string, unknown>[] = [];
-        try {
-          const bound = normalizeBindParams(params);
-          if (bound.length > 0) stmt.bind(bound);
-          while (stmt.step()) {
-            rows.push(stmt.getAsObject());
-          }
-          return rows;
-        } finally {
-          stmt.free();
-        }
-      },
-      run: (...params: unknown[]) => {
-        const bound = normalizeBindParams(params);
-        wasmDb.run(sql, bound);
-        const changes = wasmDb.getRowsModified();
-        if (!inTransaction) {
-          persistToDisk();
-        }
-        return { changes };
-      },
-    }),
-    exportSnapshot: (targetPath: string) => {
-      fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-      fs.writeFileSync(targetPath, Buffer.from(wasmDb.export()));
-    },
-    flushToDisk: persistToDisk,
-  };
-}
-
-function initializeDatabaseSchema(): void {
-  if (db.engine === 'node:sqlite') {
-    db.exec(`
-      PRAGMA journal_mode = WAL;
-      PRAGMA synchronous = FULL;
-      PRAGMA busy_timeout = 5000;
-    `);
-  }
-  db.exec(`
-    PRAGMA foreign_keys = ON;
-
-  CREATE TABLE IF NOT EXISTS orders (
-    order_number TEXT PRIMARY KEY,
-    lookup_token TEXT UNIQUE NOT NULL,
-    idempotency_key TEXT UNIQUE,
-    fingerprint_hash TEXT,
-    stock_deducted INTEGER NOT NULL DEFAULT 1,
-    status TEXT NOT NULL DEFAULT 'Pending',
-    payment_method TEXT NOT NULL DEFAULT 'cod',
-    payment_status TEXT NOT NULL DEFAULT 'Pending',
-    shipping_speed TEXT NOT NULL DEFAULT 'standard',
-    subtotal INTEGER NOT NULL,
-    discount_amount INTEGER NOT NULL DEFAULT 0,
-    shipping_cost INTEGER NOT NULL DEFAULT 0,
-    total INTEGER NOT NULL,
-    coupon_code TEXT,
-    gift_note TEXT,
-    admin_notes TEXT,
-    customer_full_name TEXT NOT NULL,
-    customer_email TEXT NOT NULL,
-    customer_phone TEXT NOT NULL,
-    customer_phone_digits TEXT NOT NULL,
-    customer_address TEXT NOT NULL,
-    customer_city TEXT NOT NULL,
-    customer_postal_code TEXT NOT NULL DEFAULT '',
-    customer_country TEXT NOT NULL DEFAULT 'Pakistan',
-    is_seen_by_admin INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL,
-    created_at_iso TEXT NOT NULL,
-    created_at_ms INTEGER NOT NULL,
-    updated_at_iso TEXT NOT NULL
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_orders_created_ms ON orders(created_at_ms DESC);
-  CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
-  CREATE INDEX IF NOT EXISTS idx_orders_phone_digits ON orders(customer_phone_digits);
-  CREATE INDEX IF NOT EXISTS idx_orders_unseen ON orders(is_seen_by_admin);
-
-  CREATE TABLE IF NOT EXISTS order_items (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    order_number TEXT NOT NULL REFERENCES orders(order_number) ON DELETE CASCADE,
-    item_key TEXT NOT NULL,
-    product_id TEXT NOT NULL,
-    slug TEXT NOT NULL,
-    name TEXT NOT NULL,
-    concentration TEXT NOT NULL,
-    image TEXT NOT NULL,
-    size_label TEXT NOT NULL,
-    size_sku TEXT NOT NULL,
-    unit_price INTEGER NOT NULL,
-    quantity INTEGER NOT NULL
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_order_items_order_number ON order_items(order_number);
-
-  CREATE TABLE IF NOT EXISTS admin_users (
-    username TEXT PRIMARY KEY,
-    password_hash TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT 'owner',
-    is_active INTEGER NOT NULL DEFAULT 1,
-    failed_attempts INTEGER NOT NULL DEFAULT 0,
-    locked_until_ms INTEGER NOT NULL DEFAULT 0,
-    created_at_iso TEXT NOT NULL,
-    updated_at_iso TEXT NOT NULL,
-    last_login_at_iso TEXT
-  );
-
-  CREATE TABLE IF NOT EXISTS admin_sessions (
-    token_hash TEXT PRIMARY KEY,
-    username TEXT NOT NULL DEFAULT '',
-    email TEXT NOT NULL,
-    logged_in_at TEXT NOT NULL,
-    created_at_ms INTEGER NOT NULL,
-    expires_at_ms INTEGER NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS product_overrides (
-    product_id TEXT PRIMARY KEY,
-    price INTEGER,
-    stock_units INTEGER,
-    low_stock_threshold INTEGER DEFAULT 10,
-    in_stock INTEGER,
-    is_best_seller INTEGER,
-    is_new_arrival INTEGER,
-    updated_at_ms INTEGER NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS shipping_rates (
-    city_key TEXT PRIMARY KEY,
-    city_name TEXT NOT NULL,
-    standard_fee INTEGER NOT NULL,
-    express_fee INTEGER NOT NULL,
-    free_shipping_threshold INTEGER NOT NULL DEFAULT 5000,
-    estimated_days TEXT NOT NULL DEFAULT '2–4 Working Days',
-    active INTEGER NOT NULL DEFAULT 1,
-    updated_at_ms INTEGER NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS coupons (
-    code TEXT PRIMARY KEY,
-    discount_type TEXT NOT NULL DEFAULT 'percentage',
-    discount_value INTEGER NOT NULL,
-    min_order_amount INTEGER NOT NULL DEFAULT 0,
-    max_uses INTEGER,
-    used_count INTEGER NOT NULL DEFAULT 0,
-    description TEXT NOT NULL DEFAULT '',
-    active INTEGER NOT NULL DEFAULT 1,
-    expires_at_iso TEXT,
-    created_at_ms INTEGER NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS product_reviews (
-    id TEXT PRIMARY KEY,
-    product_id TEXT NOT NULL,
-    author TEXT NOT NULL,
-    location TEXT NOT NULL,
-    rating INTEGER NOT NULL,
-    title TEXT NOT NULL,
-    comment TEXT NOT NULL,
-    verified_purchase INTEGER NOT NULL DEFAULT 0,
-    date_label TEXT NOT NULL,
-    created_at_ms INTEGER NOT NULL
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_reviews_product ON product_reviews(product_id, created_at_ms DESC);
-
-  CREATE TABLE IF NOT EXISTS wishlists (
-    client_id TEXT NOT NULL,
-    product_id TEXT NOT NULL,
-    created_at_ms INTEGER NOT NULL,
-    PRIMARY KEY (client_id, product_id)
-  );
-
-  CREATE TABLE IF NOT EXISTS inquiries (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    email TEXT NOT NULL,
-    topic TEXT NOT NULL,
-    message TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    created_at_ms INTEGER NOT NULL,
-    resolved INTEGER NOT NULL DEFAULT 0
-  );
-
-  CREATE TABLE IF NOT EXISTS subscribers (
-    email TEXT PRIMARY KEY,
-    created_at_ms INTEGER NOT NULL
-  );
-`);
-
-  // Safe idempotent column migrations for existing databases
-  ensureColumnExists('orders', 'idempotency_key', 'TEXT');
-  ensureColumnExists('orders', 'fingerprint_hash', 'TEXT');
-  ensureColumnExists('orders', 'stock_deducted', 'INTEGER NOT NULL DEFAULT 1');
-  ensureColumnExists('product_overrides', 'low_stock_threshold', 'INTEGER DEFAULT 10');
-  ensureColumnExists('admin_sessions', 'username', "TEXT NOT NULL DEFAULT ''");
-
-  db.exec(`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_idempotency ON orders(idempotency_key) WHERE idempotency_key IS NOT NULL;
-    CREATE INDEX IF NOT EXISTS idx_orders_fingerprint ON orders(fingerprint_hash, created_at_ms DESC);
-  `);
-}
-
-function ensureColumnExists(table: string, column: string, definition: string): void {
-  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as unknown as { name: string }[];
-  if (!cols.some((c) => c.name === column)) {
-    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
-  }
-}
-
-function checkpointDatabase(): void {
-  if (!db) return;
-  if (db.flushToDisk) {
-    db.flushToDisk();
-    return;
-  }
-  try {
-    db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
-  } catch {
-    try {
-      db.exec('PRAGMA wal_checkpoint(PASSIVE);');
-    } catch {
-      // Safe no-op if checkpoint is temporarily busy
-    }
-  }
-}
-
-// Seed default inventory, city shipping rates, and coupons without overwriting admin edits
-function seedInitialStoreConfiguration(): void {
-  const now = Date.now();
-
-  const seedProdStmt = db.prepare(`
-    INSERT OR IGNORE INTO product_overrides (
-      product_id, price, stock_units, low_stock_threshold, in_stock, updated_at_ms
-    ) VALUES (?, ?, 48, 10, 1, ?)
-  `);
-  for (const item of CATALOG_DEFAULTS) {
-    seedProdStmt.run(item.id, item.defaultPrice, now);
-  }
-
-  const seedRateStmt = db.prepare(`
-    INSERT OR IGNORE INTO shipping_rates (
-      city_key, city_name, standard_fee, express_fee, free_shipping_threshold, estimated_days, active, updated_at_ms
-    ) VALUES (?, ?, ?, ?, ?, ?, 1, ?)
-  `);
-  for (const r of DEFAULT_SHIPPING_RATES) {
-    seedRateStmt.run(
-      r.cityKey,
-      r.cityName,
-      r.standardFee,
-      r.expressFee,
-      r.freeShippingThreshold,
-      r.estimatedDays,
-      now,
-    );
-  }
-
-  const seedCouponStmt = db.prepare(`
-    INSERT OR IGNORE INTO coupons (
-      code, discount_type, discount_value, min_order_amount, max_uses, used_count, description, active, expires_at_iso, created_at_ms
-    ) VALUES (?, ?, ?, ?, ?, 0, ?, 1, NULL, ?)
-  `);
-  for (const c of DEFAULT_COUPONS) {
-    seedCouponStmt.run(
-      c.code,
-      c.discountType,
-      c.discountValue,
-      c.minOrderAmount,
-      c.maxUses,
-      c.description,
-      now,
-    );
-  }
-
-  // Provision / sync secure bcrypt-hashed admin account
-  const nowIso = new Date().toISOString();
-  const rawEnvUsername = stripSurroundingQuotes(process.env.ADMIN_USERNAME || '')
-    .toLowerCase()
-    .replace(/^@+/, '');
-  const envPasswordHash = normalizeBcryptHashFromEnv(process.env.ADMIN_PASSWORD_HASH);
-  const envInitialPassword = stripSurroundingQuotes(process.env.ADMIN_INITIAL_PASSWORD || '');
-  const hasValidEnvHash = /^\$2[ab]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(envPasswordHash);
-  const hasValidEnvInitialPwd = envInitialPassword.length >= 6;
-  const requireManualActivation = process.env.ADMIN_REQUIRE_ACTIVATION === 'true';
-
-  // Only honor ADMIN_USERNAME from env when paired with a valid bcrypt hash or initial password
-  const effectiveEnvUsername =
-    rawEnvUsername && (hasValidEnvHash || hasValidEnvInitialPwd) ? rawEnvUsername : '';
-
-  // Retire legacy previous username ('usman122') now that owner username is 'zn8xc'
-  if (effectiveEnvUsername !== 'usman122') {
-    db.prepare(`DELETE FROM admin_users WHERE username = 'usman122'`).run();
-  }
-
-  if (effectiveEnvUsername && hasValidEnvHash) {
-    db.prepare(
-      `INSERT INTO admin_users (
-        username, password_hash, role, is_active, failed_attempts, locked_until_ms, created_at_iso, updated_at_iso
-      ) VALUES (?, ?, 'owner', 1, 0, 0, ?, ?)
-      ON CONFLICT(username) DO UPDATE SET
-        password_hash = excluded.password_hash,
-        is_active = 1,
-        failed_attempts = 0,
-        locked_until_ms = 0,
-        updated_at_iso = excluded.updated_at_iso`,
-    ).run(effectiveEnvUsername, envPasswordHash, nowIso, nowIso);
-  } else if (effectiveEnvUsername && hasValidEnvInitialPwd) {
-    const existingEnvAdmin = db
-      .prepare('SELECT username FROM admin_users WHERE username = ?')
-      .get(effectiveEnvUsername);
-    if (!existingEnvAdmin) {
-      const hashed = bcrypt.hashSync(envInitialPassword, BCRYPT_ROUNDS);
-      db.prepare(
-        `INSERT INTO admin_users (
-          username, password_hash, role, is_active, failed_attempts, locked_until_ms, created_at_iso, updated_at_iso
-        ) VALUES (?, ?, 'owner', ?, 0, 0, ?, ?)`,
-      ).run(effectiveEnvUsername, hashed, requireManualActivation ? 0 : 1, nowIso, nowIso);
-    }
-  }
-
-  // Ensure an owner account exists (defaults to 'zn8xc' with salted bcrypt hash if no custom owner is active)
-  const existingOwnerCount = db
-    .prepare('SELECT COUNT(*) AS cnt FROM admin_users')
-    .get() as { cnt: number } | undefined;
-
-  if (Number(existingOwnerCount?.cnt ?? 0) === 0) {
-    db.prepare(
-      `INSERT INTO admin_users (
-        username, password_hash, role, is_active, failed_attempts, locked_until_ms, created_at_iso, updated_at_iso
-      ) VALUES (?, ?, 'owner', ?, 0, 0, ?, ?)`,
-    ).run(
-      INITIAL_ADMIN_USERNAME,
-      INITIAL_ADMIN_BCRYPT_HASH,
-      requireManualActivation ? 0 : 1,
-      nowIso,
-      nowIso,
-    );
-  } else if (!requireManualActivation) {
-    db.prepare(
-      `UPDATE admin_users SET is_active = 1, failed_attempts = 0, locked_until_ms = 0`,
-    ).run();
-  }
-
-  // Purge sessions for any deleted or inactive accounts
-  db.prepare(
-    `DELETE FROM admin_sessions
-     WHERE username = '' OR username IS NULL
-        OR username NOT IN (SELECT username FROM admin_users WHERE is_active = 1)`,
-  ).run();
-
-  checkpointDatabase();
-}
 
 export async function ensureDatabaseReady(): Promise<void> {
   if (db) return;
   if (!dbInitPromise) {
     dbInitPromise = (async () => {
-      db = await openCompatibleSqliteDatabase(dbFilePath);
-      initializeDatabaseSchema();
-      seedInitialStoreConfiguration();
+      db = await initDatabase();
+      await initializeDatabaseSchema(db);
+      await seedInitialStoreConfiguration(db);
+      if (db.engine === 'postgres') {
+        await migrateFromLegacySqliteIfEmpty(db);
+      }
     })().catch((err) => {
       dbInitPromise = null;
+      console.error('[NORVA DB] ensureDatabaseReady error:', err);
       throw err;
     });
   }
@@ -892,7 +304,12 @@ function getClientIp(req: Request): string {
   if (typeof xff === 'string' && xff.trim()) {
     return xff.split(',')[0].trim();
   }
-  return req.socket.remoteAddress || 'unknown';
+  return (
+    req.socket?.remoteAddress ||
+    req.ip ||
+    (req as unknown as { socket?: { remoteAddress?: string } })?.socket?.remoteAddress ||
+    'unknown'
+  );
 }
 
 function isIpRateLimited(ip: string): boolean {
@@ -947,10 +364,9 @@ function parseCookies(cookieHeader: string | undefined): Record<string, string> 
   const out: Record<string, string> = {};
   for (const part of cookieHeader.split(';')) {
     const idx = part.indexOf('=');
-    if (idx === -1) continue;
-    const k = part.slice(0, idx).trim();
-    const v = part.slice(idx + 1).trim();
-    if (k) {
+    if (idx > -1) {
+      const k = part.slice(0, idx).trim();
+      const v = part.slice(idx + 1).trim();
       try {
         out[k] = decodeURIComponent(v);
       } catch {
@@ -961,7 +377,10 @@ function parseCookies(cookieHeader: string | undefined): Record<string, string> 
   return out;
 }
 
-function extractRawAdminToken(req: Request | IncomingMessage, queryToken?: string): string | null {
+function extractRawAdminToken(
+  req: Request | IncomingMessage,
+  queryToken?: string,
+): string | null {
   const authHeader = req.headers.authorization;
   if (typeof authHeader === 'string' && authHeader.toLowerCase().startsWith('bearer ')) {
     const bearer = authHeader.slice(7).trim();
@@ -977,32 +396,29 @@ function extractRawAdminToken(req: Request | IncomingMessage, queryToken?: strin
   return null;
 }
 
-function verifyAdminToken(rawToken: string | null): AuthenticatedAdmin | null {
+async function verifyAdminToken(rawToken: string | null): Promise<AuthenticatedAdmin | null> {
   if (!rawToken || rawToken.length < 16) return null;
   const tokenHash = sha256Hex(rawToken);
   const now = Date.now();
 
-  const row = db
-    .prepare(
-      `SELECT s.token_hash, s.username, s.email, s.logged_in_at, s.expires_at_ms, u.is_active
-       FROM admin_sessions s
-       LEFT JOIN admin_users u ON u.username = s.username
-       WHERE s.token_hash = ?`,
-    )
-    .get(tokenHash) as
-    | {
-        token_hash: string;
-        username: string;
-        email: string;
-        logged_in_at: string;
-        expires_at_ms: number;
-        is_active: number | null;
-      }
-    | undefined;
+  const row = await db.queryOne<{
+    token_hash: string;
+    username: string;
+    email: string;
+    logged_in_at: string;
+    expires_at_ms: number | string;
+    is_active: number | string | null;
+  }>(
+    `SELECT s.token_hash, s.username, s.email, s.logged_in_at, s.expires_at_ms, u.is_active
+     FROM admin_sessions s
+     LEFT JOIN admin_users u ON u.username = s.username
+     WHERE s.token_hash = ?`,
+    [tokenHash],
+  );
 
   if (!row) return null;
-  if (row.expires_at_ms <= now || row.is_active !== 1) {
-    db.prepare('DELETE FROM admin_sessions WHERE token_hash = ?').run(tokenHash);
+  if (Number(row.expires_at_ms) <= now || Number(row.is_active ?? 0) !== 1) {
+    await db.execute('DELETE FROM admin_sessions WHERE token_hash = ?', [tokenHash]);
     return null;
   }
 
@@ -1015,105 +431,71 @@ function verifyAdminToken(rawToken: string | null): AuthenticatedAdmin | null {
   };
 }
 
-function requireAdminAuth(req: Request, res: Response, next: NextFunction): void {
-  const queryToken = typeof req.query.token === 'string' ? req.query.token : undefined;
-  const rawToken = extractRawAdminToken(req, queryToken);
-  const session = verifyAdminToken(rawToken);
-  if (!session) {
-    if (req.headers.cookie && req.headers.cookie.includes(ADMIN_COOKIE_NAME)) {
-      const isHttps =
-        req.secure ||
-        req.headers['x-forwarded-proto'] === 'https' ||
-        process.env.NODE_ENV === 'production';
-      const cookiePolicy = isHttps ? 'Secure; SameSite=None' : 'SameSite=Lax';
-      res.setHeader(
-        'Set-Cookie',
-        `${ADMIN_COOKIE_NAME}=; Path=/; HttpOnly; ${cookiePolicy}; Max-Age=0`,
-      );
+async function requireAdminAuth(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const queryToken = typeof req.query.token === 'string' ? req.query.token : undefined;
+    const rawToken = extractRawAdminToken(req, queryToken);
+    const session = await verifyAdminToken(rawToken);
+    if (!session) {
+      if (req.headers.cookie && req.headers.cookie.includes(ADMIN_COOKIE_NAME)) {
+        const isHttps =
+          req.secure ||
+          req.headers['x-forwarded-proto'] === 'https' ||
+          process.env.NODE_ENV === 'production';
+        const cookiePolicy = isHttps ? 'Secure; SameSite=None' : 'SameSite=Lax';
+        res.setHeader(
+          'Set-Cookie',
+          `${ADMIN_COOKIE_NAME}=; Path=/; HttpOnly; ${cookiePolicy}; Max-Age=0`,
+        );
+      }
+      res.status(401).json({
+        ok: false,
+        error: 'Administrator authentication required.',
+      });
+      return;
     }
-    res.status(401).json({
-      ok: false,
-      error: 'Administrator authentication required.',
-    });
-    return;
+
+    (req as unknown as { adminUser?: AuthenticatedAdmin }).adminUser = session;
+    next();
+  } catch (err) {
+    console.error('[NORVA requireAdminAuth error]', err);
+    res.status(500).json({ ok: false, error: 'Authentication verification error.' });
   }
-  (req as Request & { adminSession?: AuthenticatedAdmin }).adminSession = session;
-  next();
 }
 
-// ============================================================================
-// DATA ACCESS & BUSINESS LOGIC HELPERS
-// ============================================================================
 function normalizeOrderStatus(raw: string): OrderStatus {
-  if (raw === 'Dispatched') return 'Shipped';
-  if (VALID_ORDER_STATUSES.has(raw as OrderStatus)) return raw as OrderStatus;
+  if (VALID_ORDER_STATUSES.has(raw as OrderStatus)) {
+    return raw as OrderStatus;
+  }
   return 'Pending';
 }
 
 function normalizePaymentStatus(raw: string): PaymentStatus {
-  if (VALID_PAYMENT_STATUSES.has(raw as PaymentStatus)) return raw as PaymentStatus;
+  if (VALID_PAYMENT_STATUSES.has(raw as PaymentStatus)) {
+    return raw as PaymentStatus;
+  }
   return 'Pending';
 }
 
-interface RawOrderRow {
-  order_number: string;
-  lookup_token: string;
-  idempotency_key: string | null;
-  fingerprint_hash: string | null;
-  stock_deducted: number;
-  status: string;
-  payment_method: string;
-  payment_status: string;
-  shipping_speed: string;
-  subtotal: number;
-  discount_amount: number;
-  shipping_cost: number;
-  total: number;
-  coupon_code: string | null;
-  gift_note: string | null;
-  admin_notes: string | null;
-  customer_full_name: string;
-  customer_email: string;
-  customer_phone: string;
-  customer_phone_digits: string;
-  customer_address: string;
-  customer_city: string;
-  customer_postal_code: string;
-  customer_country: string;
-  is_seen_by_admin: number;
-  created_at: string;
-  created_at_iso: string;
-  created_at_ms: number;
-  updated_at_iso: string;
-}
-
-interface RawOrderItemRow {
-  order_number: string;
-  item_key: string;
-  product_id: string;
-  slug: string;
-  name: string;
-  concentration: string;
-  image: string;
-  size_label: string;
-  size_sku: string;
-  unit_price: number;
-  quantity: number;
-}
-
-function hydrateOrders(rows: RawOrderRow[], includeAdminFields: boolean): OrderDto[] {
+async function hydrateOrders(
+  rows: RawOrderRow[],
+  includeAdminFields: boolean,
+): Promise<OrderDto[]> {
   if (rows.length === 0) return [];
 
   const orderNumbers = rows.map((r) => r.order_number);
   const placeholders = orderNumbers.map(() => '?').join(', ');
-  const itemRows = db
-    .prepare(
-      `SELECT order_number, item_key, product_id, slug, name, concentration, image, size_label, size_sku, unit_price, quantity
-       FROM order_items
-       WHERE order_number IN (${placeholders})
-       ORDER BY id ASC`,
-    )
-    .all(...orderNumbers) as unknown as RawOrderItemRow[];
+  const itemRows = await db.query<RawOrderItemRow>(
+    `SELECT order_number, item_key, product_id, slug, name, concentration, image, size_label, size_sku, unit_price, quantity
+     FROM order_items
+     WHERE order_number IN (${placeholders})
+     ORDER BY id ASC`,
+    orderNumbers,
+  );
 
   const itemsByOrder = new Map<string, OrderItemRecord[]>();
   for (const item of itemRows) {
@@ -1127,8 +509,8 @@ function hydrateOrders(rows: RawOrderRow[], includeAdminFields: boolean): OrderD
       image: item.image,
       sizeLabel: item.size_label,
       sizeSku: item.size_sku,
-      unitPrice: item.unit_price,
-      quantity: item.quantity,
+      unitPrice: Number(item.unit_price),
+      quantity: Number(item.quantity),
     });
     itemsByOrder.set(item.order_number, list);
   }
@@ -1138,16 +520,16 @@ function hydrateOrders(rows: RawOrderRow[], includeAdminFields: boolean): OrderD
       orderNumber: row.order_number,
       createdAt: row.created_at,
       createdAtIso: row.created_at_iso,
-      createdAtMs: row.created_at_ms,
+      createdAtMs: Number(row.created_at_ms),
       updatedAtIso: row.updated_at_iso,
       status: normalizeOrderStatus(row.status),
       paymentMethod: row.payment_method === 'invoice' ? 'invoice' : 'cod',
       paymentStatus: normalizePaymentStatus(row.payment_status),
       shippingSpeed: row.shipping_speed === 'express' ? 'express' : 'standard',
-      subtotal: row.subtotal,
-      discountAmount: row.discount_amount,
-      shippingCost: row.shipping_cost,
-      total: row.total,
+      subtotal: Number(row.subtotal),
+      discountAmount: Number(row.discount_amount),
+      shippingCost: Number(row.shipping_cost),
+      total: Number(row.total),
       couponCode: row.coupon_code ?? undefined,
       giftNote: row.gift_note ?? undefined,
       items: itemsByOrder.get(row.order_number) ?? [],
@@ -1163,36 +545,41 @@ function hydrateOrders(rows: RawOrderRow[], includeAdminFields: boolean): OrderD
     };
 
     if (includeAdminFields) {
-      dto.isNew = row.is_seen_by_admin === 0;
+      dto.isNew = Number(row.is_seen_by_admin) === 0;
       dto.adminNotes = row.admin_notes ?? '';
     }
     return dto;
   });
 }
 
-function getOrderByNumber(orderNumber: string, includeAdminFields: boolean): OrderDto | null {
-  const row = db
-    .prepare('SELECT * FROM orders WHERE UPPER(order_number) = UPPER(?)')
-    .get(orderNumber.trim()) as unknown as RawOrderRow | undefined;
+async function getOrderByNumber(
+  orderNumber: string,
+  includeAdminFields: boolean,
+): Promise<OrderDto | null> {
+  const row = await db.queryOne<RawOrderRow>(
+    'SELECT * FROM orders WHERE UPPER(order_number) = UPPER(?)',
+    [orderNumber.trim()],
+  );
   if (!row) return null;
-  return hydrateOrders([row], includeAdminFields)[0] ?? null;
+  const hydrated = await hydrateOrders([row], includeAdminFields);
+  return hydrated[0] ?? null;
 }
 
-function getUnseenOrderCount(): number {
-  const row = db
-    .prepare('SELECT COUNT(*) AS cnt FROM orders WHERE is_seen_by_admin = 0')
-    .get() as { cnt: number } | undefined;
+async function getUnseenOrderCount(): Promise<number> {
+  const row = await db.queryOne<{ cnt: string | number }>(
+    'SELECT COUNT(*) AS cnt FROM orders WHERE is_seen_by_admin = 0',
+  );
   return Number(row?.cnt ?? 0);
 }
 
-function getAllAdminOrders(filters?: {
+async function getAllAdminOrders(filters?: {
   q?: string;
   orderId?: string;
   phone?: string;
   status?: string;
   paymentStatus?: string;
   onlyNew?: boolean;
-}): OrderDto[] {
+}): Promise<OrderDto[]> {
   const clauses: string[] = [];
   const params: (string | number)[] = [];
 
@@ -1243,15 +630,16 @@ function getAllAdminOrders(filters?: {
   }
 
   const whereSql = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
-  const rows = db
-    .prepare(`SELECT * FROM orders ${whereSql} ORDER BY created_at_ms DESC`)
-    .all(...params) as unknown as RawOrderRow[];
+  const rows = await db.query<RawOrderRow>(
+    `SELECT * FROM orders ${whereSql} ORDER BY created_at_ms DESC`,
+    params,
+  );
 
   return hydrateOrders(rows, true);
 }
 
-function getProductOverridesMap(): Record<string, ProductOverrideDto> {
-  const rows = db.prepare('SELECT * FROM product_overrides').all() as unknown as {
+async function getProductOverridesMap(): Promise<Record<string, ProductOverrideDto>> {
+  const rows = await db.query<{
     product_id: string;
     price: number | null;
     stock_units: number | null;
@@ -1259,27 +647,27 @@ function getProductOverridesMap(): Record<string, ProductOverrideDto> {
     in_stock: number | null;
     is_best_seller: number | null;
     is_new_arrival: number | null;
-  }[];
+  }>('SELECT * FROM product_overrides');
 
   const out: Record<string, ProductOverrideDto> = {};
   for (const r of rows) {
     const ov: ProductOverrideDto = {};
-    if (r.price !== null) ov.price = r.price;
-    if (r.stock_units !== null) ov.stockUnits = r.stock_units;
-    if (r.low_stock_threshold !== null) ov.lowStockThreshold = r.low_stock_threshold;
-    if (r.in_stock !== null) ov.inStock = r.in_stock === 1;
-    if (r.is_best_seller !== null) ov.isBestSeller = r.is_best_seller === 1;
-    if (r.is_new_arrival !== null) ov.isNewArrival = r.is_new_arrival === 1;
+    if (r.price !== null) ov.price = Number(r.price);
+    if (r.stock_units !== null) ov.stockUnits = Number(r.stock_units);
+    if (r.low_stock_threshold !== null) ov.lowStockThreshold = Number(r.low_stock_threshold);
+    if (r.in_stock !== null) ov.inStock = Number(r.in_stock) === 1;
+    if (r.is_best_seller !== null) ov.isBestSeller = Number(r.is_best_seller) === 1;
+    if (r.is_new_arrival !== null) ov.isNewArrival = Number(r.is_new_arrival) === 1;
     out[r.product_id] = ov;
   }
   return out;
 }
 
-function getShippingRates(onlyActive = false): ShippingRateDto[] {
+async function getShippingRates(onlyActive = false): Promise<ShippingRateDto[]> {
   const sql = onlyActive
-    ? 'SELECT * FROM shipping_rates WHERE active = 1 ORDER BY CASE WHEN city_key = \'__default__\' THEN 1 ELSE 0 END, city_name ASC'
-    : 'SELECT * FROM shipping_rates ORDER BY CASE WHEN city_key = \'__default__\' THEN 1 ELSE 0 END, city_name ASC';
-  const rows = db.prepare(sql).all() as unknown as {
+    ? "SELECT * FROM shipping_rates WHERE active = 1 ORDER BY CASE WHEN city_key = '__default__' THEN 1 ELSE 0 END, city_name ASC"
+    : "SELECT * FROM shipping_rates ORDER BY CASE WHEN city_key = '__default__' THEN 1 ELSE 0 END, city_name ASC";
+  const rows = await db.query<{
     city_key: string;
     city_name: string;
     standard_fee: number;
@@ -1287,26 +675,26 @@ function getShippingRates(onlyActive = false): ShippingRateDto[] {
     free_shipping_threshold: number;
     estimated_days: string;
     active: number;
-  }[];
+  }>(sql);
 
   return rows.map((r) => ({
     cityKey: r.city_key,
     cityName: r.city_name,
-    standardFee: r.standard_fee,
-    expressFee: r.express_fee,
-    freeShippingThreshold: r.free_shipping_threshold,
+    standardFee: Number(r.standard_fee),
+    expressFee: Number(r.express_fee),
+    freeShippingThreshold: Number(r.free_shipping_threshold),
     estimatedDays: r.estimated_days,
-    active: r.active === 1,
+    active: Number(r.active) === 1,
   }));
 }
 
-function calculateShippingForCity(
+async function calculateShippingForCity(
   cityInput: string,
   shippingSpeed: 'standard' | 'express',
   subtotal: number,
-): { cost: number; matchedRate: ShippingRateDto } {
+): Promise<{ cost: number; matchedRate: ShippingRateDto }> {
   const normalizedCity = cityInput.trim().toLowerCase();
-  const activeRates = getShippingRates(true);
+  const activeRates = await getShippingRates(true);
 
   const exact = activeRates.find(
     (r) => r.cityKey !== '__default__' && r.cityKey === normalizedCity,
@@ -1332,10 +720,8 @@ function calculateShippingForCity(
   return { cost: rate.standardFee, matchedRate: rate };
 }
 
-function getAllCoupons(): CouponDto[] {
-  const rows = db
-    .prepare('SELECT * FROM coupons ORDER BY created_at_ms DESC')
-    .all() as unknown as {
+async function getAllCoupons(): Promise<CouponDto[]> {
+  const rows = await db.query<{
     code: string;
     discount_type: string;
     discount_value: number;
@@ -1345,51 +731,47 @@ function getAllCoupons(): CouponDto[] {
     description: string;
     active: number;
     expires_at_iso: string | null;
-  }[];
+  }>('SELECT * FROM coupons ORDER BY created_at_ms DESC');
 
   return rows.map((r) => ({
     code: r.code,
     discountType: r.discount_type === 'fixed' ? 'fixed' : 'percentage',
-    discountValue: r.discount_value,
-    minOrderAmount: r.min_order_amount,
-    maxUses: r.max_uses,
-    usedCount: r.used_count,
+    discountValue: Number(r.discount_value),
+    minOrderAmount: Number(r.min_order_amount),
+    maxUses: r.max_uses !== null ? Number(r.max_uses) : null,
+    usedCount: Number(r.used_count),
     description: r.description,
-    active: r.active === 1,
+    active: Number(r.active) === 1,
     expiresAtIso: r.expires_at_iso,
   }));
 }
 
-function evaluateCoupon(
+async function evaluateCoupon(
   rawCode: string,
   subtotal: number,
-): { ok: true; coupon: CouponDto; discountAmount: number } | { ok: false; error: string } {
+): Promise<{ ok: true; coupon: CouponDto; discountAmount: number } | { ok: false; error: string }> {
   const code = rawCode.trim().toUpperCase();
   if (!code) {
     return { ok: false, error: 'Please enter a coupon code.' };
   }
 
-  const row = db
-    .prepare('SELECT * FROM coupons WHERE UPPER(code) = ?')
-    .get(code) as
-    | {
-        code: string;
-        discount_type: string;
-        discount_value: number;
-        min_order_amount: number;
-        max_uses: number | null;
-        used_count: number;
-        description: string;
-        active: number;
-        expires_at_iso: string | null;
-      }
-    | undefined;
+  const row = await db.queryOne<{
+    code: string;
+    discount_type: string;
+    discount_value: number;
+    min_order_amount: number;
+    max_uses: number | null;
+    used_count: number;
+    description: string;
+    active: number;
+    expires_at_iso: string | null;
+  }>('SELECT * FROM coupons WHERE UPPER(code) = ?', [code]);
 
   if (!row) {
     return { ok: false, error: `Coupon code "${code}" was not recognized.` };
   }
 
-  if (row.active !== 1) {
+  if (Number(row.active) !== 1) {
     return { ok: false, error: `Coupon code "${code}" is currently inactive.` };
   }
 
@@ -1400,22 +782,26 @@ function evaluateCoupon(
     }
   }
 
-  if (row.max_uses !== null && row.used_count >= row.max_uses) {
+  const maxUses = row.max_uses !== null ? Number(row.max_uses) : null;
+  const usedCount = Number(row.used_count);
+  if (maxUses !== null && usedCount >= maxUses) {
     return { ok: false, error: `Coupon code "${code}" has reached its redemption limit.` };
   }
 
-  if (subtotal < row.min_order_amount) {
+  const minOrderAmount = Number(row.min_order_amount);
+  if (subtotal < minOrderAmount) {
     return {
       ok: false,
-      error: `Code "${code}" requires a minimum order subtotal of PKR ${row.min_order_amount.toLocaleString('en-PK')}.`,
+      error: `Code "${code}" requires a minimum order subtotal of PKR ${minOrderAmount.toLocaleString('en-PK')}.`,
     };
   }
 
   const discountType: DiscountType = row.discount_type === 'fixed' ? 'fixed' : 'percentage';
+  const discountVal = Number(row.discount_value);
   const rawDiscount =
     discountType === 'percentage'
-      ? Math.round((subtotal * row.discount_value) / 100)
-      : row.discount_value;
+      ? Math.round((subtotal * discountVal) / 100)
+      : discountVal;
   const discountAmount = Math.max(0, Math.min(subtotal, rawDiscount));
 
   return {
@@ -1423,10 +809,10 @@ function evaluateCoupon(
     coupon: {
       code: row.code,
       discountType,
-      discountValue: row.discount_value,
-      minOrderAmount: row.min_order_amount,
-      maxUses: row.max_uses,
-      usedCount: row.used_count,
+      discountValue: discountVal,
+      minOrderAmount,
+      maxUses,
+      usedCount,
       description: row.description,
       active: true,
       expiresAtIso: row.expires_at_iso,
@@ -1435,10 +821,8 @@ function evaluateCoupon(
   };
 }
 
-function getReviewsGroupedByProduct(): Record<string, ReviewDto[]> {
-  const rows = db
-    .prepare('SELECT * FROM product_reviews ORDER BY created_at_ms DESC')
-    .all() as unknown as {
+async function getReviewsGroupedByProduct(): Promise<Record<string, ReviewDto[]>> {
+  const rows = await db.query<{
     id: string;
     product_id: string;
     author: string;
@@ -1448,7 +832,7 @@ function getReviewsGroupedByProduct(): Record<string, ReviewDto[]> {
     comment: string;
     verified_purchase: number;
     date_label: string;
-  }[];
+  }>('SELECT * FROM product_reviews ORDER BY created_at_ms DESC');
 
   const grouped: Record<string, ReviewDto[]> = {};
   for (const r of rows) {
@@ -1458,20 +842,18 @@ function getReviewsGroupedByProduct(): Record<string, ReviewDto[]> {
       productId: r.product_id,
       author: r.author,
       location: r.location,
-      rating: r.rating,
+      rating: Number(r.rating),
       title: r.title,
       comment: r.comment,
       date: r.date_label,
-      verifiedPurchase: r.verified_purchase === 1,
+      verifiedPurchase: Number(r.verified_purchase) === 1,
     });
   }
   return grouped;
 }
 
-function getAllInquiries(): InquiryDto[] {
-  const rows = db
-    .prepare('SELECT * FROM inquiries ORDER BY created_at_ms DESC')
-    .all() as unknown as {
+async function getAllInquiries(): Promise<InquiryDto[]> {
+  const rows = await db.query<{
     id: string;
     name: string;
     email: string;
@@ -1479,7 +861,7 @@ function getAllInquiries(): InquiryDto[] {
     message: string;
     created_at: string;
     resolved: number;
-  }[];
+  }>('SELECT * FROM inquiries ORDER BY created_at_ms DESC');
 
   return rows.map((r) => ({
     id: r.id,
@@ -1488,19 +870,19 @@ function getAllInquiries(): InquiryDto[] {
     topic: r.topic,
     message: r.message,
     createdAt: r.created_at,
-    resolved: r.resolved === 1,
+    resolved: Number(r.resolved) === 1,
   }));
 }
 
-function getAllSubscribers(): string[] {
-  const rows = db
-    .prepare('SELECT email FROM subscribers ORDER BY created_at_ms DESC')
-    .all() as unknown as { email: string }[];
+async function getAllSubscribers(): Promise<string[]> {
+  const rows = await db.query<{ email: string }>(
+    'SELECT email FROM subscribers ORDER BY created_at_ms DESC',
+  );
   return rows.map((r) => r.email);
 }
 
-function computeSalesAnalytics() {
-  const allOrders = getAllAdminOrders();
+async function computeSalesAnalytics() {
+  const allOrders = await getAllAdminOrders();
   const validOrders = allOrders.filter((o) => o.status !== 'Cancelled');
   const cancelledOrders = allOrders.filter((o) => o.status === 'Cancelled');
 
@@ -1548,156 +930,139 @@ function computeSalesAnalytics() {
     });
   }
 
-  const productSalesMap = new Map<
-    string,
-    { productId: string; name: string; unitsSold: number; revenue: number }
-  >();
-  for (const c of CATALOG_DEFAULTS) {
-    productSalesMap.set(c.id, {
-      productId: c.id,
-      name: c.name,
-      unitsSold: 0,
-      revenue: 0,
-    });
-  }
+  const revenueByPaymentMethod = { cod: 0, invoice: 0 };
+  const ordersByStatus: Record<string, number> = {
+    Pending: 0,
+    Confirmed: 0,
+    Processing: 0,
+    Shipped: 0,
+    Delivered: 0,
+    Cancelled: 0,
+  };
+  const unitsByProduct: Record<string, number> = {};
 
-  const citySalesMap = new Map<string, { city: string; ordersCount: number; revenue: number }>();
+  for (const o of allOrders) {
+    ordersByStatus[o.status] = (ordersByStatus[o.status] || 0) + 1;
+    if (o.status !== 'Cancelled') {
+      revenueByPaymentMethod[o.paymentMethod] =
+        (revenueByPaymentMethod[o.paymentMethod] || 0) + o.total;
 
-  for (const ord of validOrders) {
-    const iso = ord.createdAtIso || new Date(ord.createdAtMs || Date.now()).toISOString();
-    const dayKey = iso.slice(0, 10);
-    const monthKey = iso.slice(0, 7);
-    const ordUnits = ord.items.reduce((acc, it) => acc + it.quantity, 0);
+      const dayKey = o.createdAtIso ? o.createdAtIso.slice(0, 10) : '';
+      if (dayKey) {
+        const existingDay = dailyMap.get(dayKey) ?? {
+          date: dayKey,
+          ordersCount: 0,
+          unitsSold: 0,
+          revenue: 0,
+        };
+        const orderUnits = o.items.reduce((s, it) => s + it.quantity, 0);
+        existingDay.ordersCount += 1;
+        existingDay.unitsSold += orderUnits;
+        existingDay.revenue += o.total;
+        dailyMap.set(dayKey, existingDay);
+      }
 
-    const dayRec = dailyMap.get(dayKey) ?? {
-      date: dayKey,
-      ordersCount: 0,
-      unitsSold: 0,
-      revenue: 0,
-    };
-    dayRec.ordersCount += 1;
-    dayRec.unitsSold += ordUnits;
-    dayRec.revenue += ord.total;
-    dailyMap.set(dayKey, dayRec);
+      const monthKey = o.createdAtIso ? o.createdAtIso.slice(0, 7) : '';
+      if (monthKey) {
+        const existingMonth = monthlyMap.get(monthKey) ?? {
+          month: monthKey,
+          ordersCount: 0,
+          unitsSold: 0,
+          revenue: 0,
+          avgOrderValue: 0,
+        };
+        const orderUnits = o.items.reduce((s, it) => s + it.quantity, 0);
+        existingMonth.ordersCount += 1;
+        existingMonth.unitsSold += orderUnits;
+        existingMonth.revenue += o.total;
+        monthlyMap.set(monthKey, existingMonth);
+      }
 
-    const monthRec = monthlyMap.get(monthKey) ?? {
-      month: monthKey,
-      ordersCount: 0,
-      unitsSold: 0,
-      revenue: 0,
-      avgOrderValue: 0,
-    };
-    monthRec.ordersCount += 1;
-    monthRec.unitsSold += ordUnits;
-    monthRec.revenue += ord.total;
-    monthRec.avgOrderValue = Math.round(monthRec.revenue / monthRec.ordersCount);
-    monthlyMap.set(monthKey, monthRec);
-
-    for (const item of ord.items) {
-      const prodRec = productSalesMap.get(item.productId) ?? {
-        productId: item.productId,
-        name: item.name,
-        unitsSold: 0,
-        revenue: 0,
-      };
-      prodRec.unitsSold += item.quantity;
-      prodRec.revenue += item.unitPrice * item.quantity;
-      productSalesMap.set(item.productId, prodRec);
+      for (const it of o.items) {
+        unitsByProduct[it.name] = (unitsByProduct[it.name] || 0) + it.quantity;
+      }
     }
-
-    const cityClean = ord.customer.city.trim() || 'Unknown';
-    const cityKey = cityClean.toLowerCase();
-    const cityRec = citySalesMap.get(cityKey) ?? {
-      city: cityClean,
-      ordersCount: 0,
-      revenue: 0,
-    };
-    cityRec.ordersCount += 1;
-    cityRec.revenue += ord.total;
-    citySalesMap.set(cityKey, cityRec);
   }
 
   const dailyReport = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
-  const monthlyReport = Array.from(monthlyMap.values()).sort((a, b) =>
-    b.month.localeCompare(a.month),
-  );
-  const topProducts = Array.from(productSalesMap.values()).sort(
-    (a, b) => b.revenue - a.revenue || b.unitsSold - a.unitsSold,
-  );
-  const topCities = Array.from(citySalesMap.values())
-    .sort((a, b) => b.revenue - a.revenue)
-    .slice(0, 8);
+  const monthlyReport = Array.from(monthlyMap.values())
+    .map((m) => ({
+      ...m,
+      avgOrderValue: m.ordersCount > 0 ? Math.round(m.revenue / m.ordersCount) : 0,
+    }))
+    .sort((a, b) => a.month.localeCompare(b.month));
+
+  const topSellingFragrances = Object.entries(unitsByProduct)
+    .map(([name, units]) => ({ name, units }))
+    .sort((a, b) => b.units - a.units);
 
   return {
-    summary: {
-      totalOrders: allOrders.length,
-      validOrdersCount: validOrders.length,
-      cancelledOrdersCount: cancelledOrders.length,
-      grossRevenue,
-      collectedRevenue,
-      pendingCollectionRevenue,
-      averageOrderValue,
-      totalUnitsSold,
-      totalDiscountsGiven,
-    },
+    grossRevenue,
+    collectedRevenue,
+    pendingCollectionRevenue,
+    totalUnitsSold,
+    totalDiscountsGiven,
+    averageOrderValue,
+    totalOrdersCount: allOrders.length,
+    validOrdersCount: validOrders.length,
+    cancelledOrdersCount: cancelledOrders.length,
+    revenueByPaymentMethod,
+    ordersByStatus,
+    topSellingFragrances,
     dailyReport,
     monthlyReport,
-    topProducts,
-    topCities,
+    computedAtIso: new Date().toISOString(),
   };
 }
 
-// ============================================================================
-// SECURE SQLITE BACKUP MANAGEMENT (ATOMIC VACUUM INTO)
-// ============================================================================
 function listBackups(): BackupDto[] {
   try {
-    const files = fs
+    if (!fs.existsSync(backupsDir)) return [];
+    return fs
       .readdirSync(backupsDir)
-      .filter((f) => /^norva_backup_[0-9_A-Za-z-]+\.sqlite$/.test(f));
-
-    const list: BackupDto[] = [];
-    for (const filename of files) {
-      const full = path.join(backupsDir, filename);
-      const stat = fs.statSync(full);
-      list.push({
-        filename,
-        sizeBytes: stat.size,
-        createdAtIso: stat.mtime.toISOString(),
-      });
-    }
-    return list.sort((a, b) => b.createdAtIso.localeCompare(a.createdAtIso));
+      .filter((f) => f.endsWith('.sqlite') || f.endsWith('.json'))
+      .map((filename) => {
+        const stat = fs.statSync(path.join(backupsDir, filename));
+        return {
+          filename,
+          sizeBytes: stat.size,
+          createdAtIso: stat.mtime.toISOString(),
+        };
+      })
+      .sort((a, b) => b.createdAtIso.localeCompare(a.createdAtIso));
   } catch {
     return [];
   }
 }
 
-function createDatabaseBackup(tag = 'manual'): BackupDto {
-  fs.mkdirSync(backupsDir, { recursive: true });
-  const stamp = new Date()
-    .toISOString()
-    .replace(/[-:]/g, '')
-    .replace(/\..+/, '')
-    .replace('T', '_');
-  const safeTag = tag.replace(/[^a-zA-Z0-9]/g, '').slice(0, 12) || 'snap';
-  const filename = `norva_backup_${stamp}_${safeTag}.sqlite`;
+async function createDatabaseBackup(tag = 'manual'): Promise<BackupDto> {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const filename = `norva_backup_${tag}_${timestamp}.json`;
   const targetPath = path.join(backupsDir, filename);
 
-  if (db.exportSnapshot) {
-    db.exportSnapshot(targetPath);
-  } else {
-    // Escape single quotes in file path for SQLite VACUUM INTO
-    const escapedTarget = targetPath.replace(/'/g, "''");
-    db.exec(`VACUUM INTO '${escapedTarget}'`);
-  }
+  const snapshot = {
+    timestamp: new Date().toISOString(),
+    engine: db.engine,
+    orders: await db.query('SELECT * FROM orders'),
+    orderItems: await db.query('SELECT * FROM order_items'),
+    productOverrides: await db.query('SELECT * FROM product_overrides'),
+    shippingRates: await db.query('SELECT * FROM shipping_rates'),
+    coupons: await db.query('SELECT * FROM coupons'),
+    productReviews: await db.query('SELECT * FROM product_reviews'),
+    wishlists: await db.query('SELECT * FROM wishlists'),
+    inquiries: await db.query('SELECT * FROM inquiries'),
+    subscribers: await db.query('SELECT * FROM subscribers'),
+  };
 
-  // Prune older snapshots beyond MAX_BACKUPS_RETAINED
-  const all = listBackups();
-  for (const old of all.slice(MAX_BACKUPS_RETAINED)) {
-    try {
-      fs.unlinkSync(path.join(backupsDir, old.filename));
-    } catch {
-      // Ignore cleanup race
+  fs.writeFileSync(targetPath, JSON.stringify(snapshot, null, 2), 'utf8');
+
+  // Rotate old backups
+  const existing = listBackups();
+  if (existing.length > MAX_BACKUPS_RETAINED) {
+    for (const b of existing.slice(MAX_BACKUPS_RETAINED)) {
+      try {
+        fs.unlinkSync(path.join(backupsDir, b.filename));
+      } catch {}
     }
   }
 
@@ -1709,57 +1074,75 @@ function createDatabaseBackup(tag = 'manual'): BackupDto {
   };
 }
 
-function generateUniqueOrderNumber(): string {
-  const checkStmt = db.prepare('SELECT 1 FROM orders WHERE order_number = ?');
-  for (let attempt = 0; attempt < 25; attempt++) {
-    const num = Math.floor(10000 + Math.random() * 90000);
-    const candidate = `NV-${num}`;
-    if (!checkStmt.get(candidate)) {
-      return candidate;
-    }
+async function generateUniqueOrderNumber(): Promise<string> {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const candidate = `NV-${Math.floor(10000 + Math.random() * 90000)}`;
+    const existing = await db.queryOne('SELECT 1 FROM orders WHERE order_number = ?', [candidate]);
+    if (!existing) return candidate;
   }
-  return `NV-${Date.now().toString().slice(-6)}`;
+  return `NV-${Date.now().toString().slice(-5)}`;
 }
 
-// ============================================================================
-// REAL-TIME ADMIN NOTIFICATION HUB (WEBSOCKET + SSE)
-// ============================================================================
+// Global active authenticated admin WebSocket clients for live broadcast
 const adminWsClients = new Set<WebSocket>();
-const adminSseClients = new Set<Response>();
 
 function broadcastToAdmins(eventPayload: Record<string, unknown>): void {
-  const serialized = JSON.stringify(eventPayload);
-
+  const message = JSON.stringify(eventPayload);
   for (const client of adminWsClients) {
     if (client.readyState === WebSocket.OPEN) {
       try {
-        client.send(serialized);
+        client.send(message);
       } catch {
         adminWsClients.delete(client);
       }
-    } else if (
-      client.readyState === WebSocket.CLOSED ||
-      client.readyState === WebSocket.CLOSING
-    ) {
-      adminWsClients.delete(client);
-    }
-  }
-
-  for (const res of adminSseClients) {
-    try {
-      res.write(`data: ${serialized}\n\n`);
-    } catch {
-      adminSseClients.delete(res);
     }
   }
 }
 
 // ============================================================================
-// EXPRESS APPLICATION & ROUTES
+// EXPRESS APPLICATION FACTORY
 // ============================================================================
 export function createExpressApp(): express.Express {
   const app = express();
   app.disable('x-powered-by');
+
+  // Ensure pre-parsed bodies in serverless/Vercel request bridges do not stall body parsing
+  app.use((req: Request, _res: Response, next: NextFunction) => {
+    if (req.body && typeof req.body === 'object') {
+      (req as unknown as { _body?: boolean })._body = true;
+    }
+    next();
+  });
+
+  // Lightweight built-in Gzip compression for JSON API payloads (> 1 KB) to speed up slow connections
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const acceptEncoding = String(req.headers['accept-encoding'] || '');
+    if (!/\bgzip\b/i.test(acceptEncoding) || req.path === '/api/admin/ws') {
+      next();
+      return;
+    }
+    const origJson = res.json.bind(res);
+    res.json = ((body: unknown) => {
+      const jsonStr = JSON.stringify(body);
+      if (jsonStr.length < 1024 || res.headersSent) {
+        return origJson(body);
+      }
+      try {
+        const compressed = zlib.gzipSync(Buffer.from(jsonStr, 'utf8'), {
+          level: zlib.constants.Z_BEST_SPEED,
+        });
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.setHeader('Content-Encoding', 'gzip');
+        res.setHeader('Vary', 'Accept-Encoding');
+        res.setHeader('Content-Length', String(compressed.length));
+        return res.send(compressed);
+      } catch {
+        return origJson(body);
+      }
+    }) as typeof res.json;
+    next();
+  });
+
   app.use(express.json({ limit: '1mb' }));
 
   // Malformed JSON error handler
@@ -1782,55 +1165,83 @@ export function createExpressApp(): express.Express {
         ok: true,
         status: 'ok',
         engine: db.engine,
-        persistentStorage: !isEphemeralFallback,
+        persistentStorage: db.isPersistent,
+        connection: db.connectionInfo,
       });
     } catch (err) {
-      console.error('Health check DB error:', err);
+      console.error('[Health check DB error]', err);
       res.status(500).json({
         ok: false,
         error: 'Database initialization failed.',
+        details: err instanceof Error ? err.message : String(err),
       });
     }
   });
 
-  // Guarantee SQLite database & schema are ready before handling any /api route
+  // Guarantee database & schema are ready before handling any /api route
   app.use('/api', async (_req: Request, res: Response, next: NextFunction) => {
     try {
       await ensureDatabaseReady();
       next();
     } catch (err) {
-      console.error('Database initialization failure:', err);
+      console.error('[NORVA DB initialization failure]:', err);
       res.status(500).json({
         ok: false,
-        error: 'Unable to connect to the NORVA order database right now. Please try again shortly.',
+        error: 'Unable to connect to the NORVA order database right now. Please check server logs and database configuration.',
       });
     }
+  });
+
+  // Graceful response for WebSocket endpoint when accessed via HTTP in serverless
+  app.get('/api/admin/ws', (_req: Request, res: Response) => {
+    res.status(426).json({
+      ok: false,
+      error: 'WebSocket connection not supported in serverless environment. Polling fallback is active.',
+    });
   });
 
   // --------------------------------------------------------------------------
   // PUBLIC STOREFRONT ENDPOINTS (ZERO CUSTOMER PII EXPOSED)
   // --------------------------------------------------------------------------
-  app.get('/api/storefront/bootstrap', (_req: Request, res: Response) => {
-    res.json({
-      ok: true,
-      productOverrides: getProductOverridesMap(),
-      shippingRates: getShippingRates(true),
-      reviewsByProduct: getReviewsGroupedByProduct(),
-    });
+  app.get('/api/storefront/bootstrap', async (req: Request, res: Response) => {
+    try {
+      const clientId =
+        typeof req.query.clientId === 'string' ? req.query.clientId.trim() : '';
+      let wishlist: string[] | undefined;
+      if (clientId.length >= 8) {
+        const rows = await db.query<{ product_id: string }>(
+          'SELECT product_id FROM wishlists WHERE client_id = ? ORDER BY created_at_ms DESC',
+          [clientId],
+        );
+        wishlist = rows.map((r) => r.product_id);
+      }
+
+      res.setHeader('Cache-Control', 'no-cache');
+      res.json({
+        ok: true,
+        productOverrides: await getProductOverridesMap(),
+        shippingRates: await getShippingRates(true),
+        reviewsByProduct: await getReviewsGroupedByProduct(),
+        ...(wishlist !== undefined ? { wishlist } : {}),
+      });
+    } catch (err) {
+      console.error('[Storefront Bootstrap Error]', err);
+      res.status(500).json({ ok: false, error: 'Failed to load storefront data.' });
+    }
   });
 
-  app.get('/api/shipping-rates', (_req: Request, res: Response) => {
+  app.get('/api/shipping-rates', async (_req: Request, res: Response) => {
     res.json({
       ok: true,
-      shippingRates: getShippingRates(true),
+      shippingRates: await getShippingRates(true),
     });
   });
 
   // Validate Discount / Coupon Code in Checkout
-  app.post('/api/coupons/validate', (req: Request, res: Response) => {
+  app.post('/api/coupons/validate', async (req: Request, res: Response) => {
     const code = String(req.body?.code ?? '');
     const subtotal = Math.max(0, Math.round(Number(req.body?.subtotal) || 0));
-    const evaluation = evaluateCoupon(code, subtotal);
+    const evaluation = await evaluateCoupon(code, subtotal);
     if (!evaluation.ok) {
       res.status(400).json({
         ok: false,
@@ -1846,22 +1257,23 @@ export function createExpressApp(): express.Express {
   });
 
   // Persistent Wishlist Sync (Keyed by anonymous browser client UUID)
-  app.get('/api/wishlist/:clientId', (req: Request, res: Response) => {
+  app.get('/api/wishlist/:clientId', async (req: Request, res: Response) => {
     const clientId = String(req.params.clientId ?? '').trim();
     if (!clientId || clientId.length < 8) {
       res.json({ ok: true, wishlist: [] });
       return;
     }
-    const rows = db
-      .prepare('SELECT product_id FROM wishlists WHERE client_id = ? ORDER BY created_at_ms DESC')
-      .all(clientId) as unknown as { product_id: string }[];
+    const rows = await db.query<{ product_id: string }>(
+      'SELECT product_id FROM wishlists WHERE client_id = ? ORDER BY created_at_ms DESC',
+      [clientId],
+    );
     res.json({
       ok: true,
       wishlist: rows.map((r) => r.product_id),
     });
   });
 
-  app.post('/api/wishlist/:clientId/toggle', (req: Request, res: Response) => {
+  app.post('/api/wishlist/:clientId/toggle', async (req: Request, res: Response) => {
     const clientId = String(req.params.clientId ?? '').trim();
     const productId = String(req.body?.productId ?? '').trim();
     if (!clientId || clientId.length < 8 || !productId) {
@@ -1869,25 +1281,27 @@ export function createExpressApp(): express.Express {
       return;
     }
 
-    const existing = db
-      .prepare('SELECT 1 FROM wishlists WHERE client_id = ? AND product_id = ?')
-      .get(clientId, productId);
+    const existing = await db.queryOne(
+      'SELECT 1 FROM wishlists WHERE client_id = ? AND product_id = ?',
+      [clientId, productId],
+    );
 
     if (existing) {
-      db.prepare('DELETE FROM wishlists WHERE client_id = ? AND product_id = ?').run(
+      await db.execute('DELETE FROM wishlists WHERE client_id = ? AND product_id = ?', [
         clientId,
         productId,
-      );
+      ]);
     } else {
-      db.prepare(
+      await db.execute(
         'INSERT INTO wishlists (client_id, product_id, created_at_ms) VALUES (?, ?, ?)',
-      ).run(clientId, productId, Date.now());
+        [clientId, productId, Date.now()],
+      );
     }
-    checkpointDatabase();
 
-    const rows = db
-      .prepare('SELECT product_id FROM wishlists WHERE client_id = ? ORDER BY created_at_ms DESC')
-      .all(clientId) as unknown as { product_id: string }[];
+    const rows = await db.query<{ product_id: string }>(
+      'SELECT product_id FROM wishlists WHERE client_id = ? ORDER BY created_at_ms DESC',
+      [clientId],
+    );
 
     res.json({
       ok: true,
@@ -1897,14 +1311,14 @@ export function createExpressApp(): express.Express {
   });
 
   // Persistent Product Reviews
-  app.get('/api/reviews', (_req: Request, res: Response) => {
+  app.get('/api/reviews', async (_req: Request, res: Response) => {
     res.json({
       ok: true,
-      reviewsByProduct: getReviewsGroupedByProduct(),
+      reviewsByProduct: await getReviewsGroupedByProduct(),
     });
   });
 
-  app.post('/api/products/:productId/reviews', (req: Request, res: Response) => {
+  app.post('/api/products/:productId/reviews', async (req: Request, res: Response) => {
     const productId = String(req.params.productId ?? '').trim();
     const author = String(req.body?.author ?? '').trim().slice(0, 80);
     const location = String(req.body?.location ?? '').trim().slice(0, 80) || 'Verified Client';
@@ -1923,9 +1337,10 @@ export function createExpressApp(): express.Express {
 
     let verifiedPurchase = 0;
     if (orderNumber) {
-      const ordMatch = db
-        .prepare('SELECT 1 FROM orders WHERE UPPER(order_number) = ? AND status != \'Cancelled\'')
-        .get(orderNumber);
+      const ordMatch = await db.queryOne(
+        "SELECT 1 FROM orders WHERE UPPER(order_number) = ? AND status != 'Cancelled'",
+        [orderNumber],
+      );
       if (ordMatch) verifiedPurchase = 1;
     }
 
@@ -1936,26 +1351,25 @@ export function createExpressApp(): express.Express {
       year: 'numeric',
     });
 
-    db.prepare(
+    await db.execute(
       `INSERT INTO product_reviews (
         id, product_id, author, location, rating, title, comment, verified_purchase, date_label, created_at_ms
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      id,
-      productId,
-      author,
-      location,
-      rating,
-      title,
-      comment,
-      verifiedPurchase,
-      dateLabel,
-      Date.now(),
+      [
+        id,
+        productId,
+        author,
+        location,
+        rating,
+        title,
+        comment,
+        verifiedPurchase,
+        dateLabel,
+        Date.now(),
+      ],
     );
 
-    checkpointDatabase();
-
-    const review: ReviewDto = {
+    const reviewPayload = {
       id,
       productId,
       author,
@@ -1963,121 +1377,199 @@ export function createExpressApp(): express.Express {
       rating,
       title,
       comment,
-      date: dateLabel,
       verifiedPurchase: verifiedPurchase === 1,
+      date: dateLabel,
     };
 
-    broadcastToAdmins({ type: 'review:created', review });
-    res.status(201).json({ ok: true, review });
-  });
+    broadcastToAdmins({
+      type: 'review:created',
+      review: reviewPayload,
+    });
 
-  // Customer Order Tracking using Unique Order Number + Phone Verification
-  app.post('/api/orders/track', (req: Request, res: Response) => {
-    const rawOrderNumber = String(req.body?.orderNumber ?? '').trim();
-    const rawPhone = String(req.body?.phone ?? '').trim();
-
-    if (!rawOrderNumber || !rawPhone) {
-      res.status(400).json({
-        ok: false,
-        error: 'Please enter both your NORVA Order Number (e.g. NV-12345) and your Phone Number.',
-      });
-      return;
-    }
-
-    const row = db
-      .prepare('SELECT * FROM orders WHERE UPPER(order_number) = UPPER(?)')
-      .get(rawOrderNumber) as unknown as RawOrderRow | undefined;
-
-    if (!row || !phonesMatchForVerification(row.customer_phone_digits || row.customer_phone, rawPhone)) {
-      res.status(404).json({
-        ok: false,
-        error:
-          'No matching order was found for that Order Number and Phone Number. Please double-check both fields.',
-      });
-      return;
-    }
-
-    const orderDto = hydrateOrders([row], false)[0];
-    res.json({
+    res.status(201).json({
       ok: true,
-      order: orderDto,
+      review: reviewPayload,
     });
   });
 
-  // Create & Persist New Customer Order (with Idempotency, Duplicate Guard, City Shipping, Coupon & Stock Deduction)
-  app.post('/api/orders', (req: Request, res: Response) => {
+  // Customer Order Tracking with Phone Verification
+  app.post('/api/orders/track', async (req: Request, res: Response) => {
+    try {
+      const orderNumber = String(req.body?.orderNumber ?? '').trim().toUpperCase();
+      const phoneInput = String(req.body?.phone ?? '').trim();
+
+      if (!orderNumber || !phoneInput) {
+        res.status(400).json({
+          ok: false,
+          error: 'Please enter both your order number and phone number.',
+        });
+        return;
+      }
+
+      const row = await db.queryOne<RawOrderRow>(
+        'SELECT * FROM orders WHERE UPPER(order_number) = ?',
+        [orderNumber],
+      );
+
+      if (!row) {
+        res.status(404).json({
+          ok: false,
+          error: `Order "${orderNumber}" was not found. Please double-check the order ID from your confirmation receipt.`,
+        });
+        return;
+      }
+
+      const phoneMatches = phonesMatchForVerification(
+        row.customer_phone_digits || row.customer_phone,
+        phoneInput,
+      );
+
+      if (!phoneMatches) {
+        res.status(403).json({
+          ok: false,
+          error:
+            'The phone number entered does not match the delivery contact on this order.',
+        });
+        return;
+      }
+
+      const hydrated = await hydrateOrders([row], false);
+      res.json({
+        ok: true,
+        order: hydrated[0],
+      });
+    } catch (err) {
+      console.error('[Track Order Error]', err);
+      res.status(500).json({ ok: false, error: 'Unable to track order right now.' });
+    }
+  });
+
+  // Client Concierge Inquiry Submission
+  app.post('/api/inquiries', async (req: Request, res: Response) => {
+    const name = String(req.body?.name ?? '').trim().slice(0, 100);
+    const email = String(req.body?.email ?? '').trim().toLowerCase().slice(0, 150);
+    const topic = String(req.body?.topic ?? '').trim().slice(0, 100) || 'General Inquiry';
+    const message = String(req.body?.message ?? '').trim().slice(0, 2000);
+
+    if (!name || !email || !message) {
+      res.status(400).json({
+        ok: false,
+        error: 'Please enter your name, email, and message.',
+      });
+      return;
+    }
+
+    const id = `inq-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
+    const now = Date.now();
+    const createdAt = new Date().toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+
+    await db.execute(
+      'INSERT INTO inquiries (id, name, email, topic, message, created_at, created_at_ms, resolved) VALUES (?, ?, ?, ?, ?, ?, ?, 0)',
+      [id, name, email, topic, message, createdAt, now],
+    );
+
+    const inquiryPayload = {
+      id,
+      name,
+      email,
+      topic,
+      message,
+      createdAt,
+      resolved: false,
+    };
+
+    broadcastToAdmins({
+      type: 'inquiry:created',
+      inquiry: inquiryPayload,
+    });
+
+    res.status(201).json({
+      ok: true,
+      inquiry: inquiryPayload,
+    });
+  });
+
+  // Newsletter Subscription
+  app.post('/api/newsletter/subscribe', async (req: Request, res: Response) => {
+    const email = String(req.body?.email ?? '').trim().toLowerCase();
+    if (!email || !email.includes('@')) {
+      res.status(400).json({ ok: false, error: 'Please enter a valid email address.' });
+      return;
+    }
+    await db.execute(
+      'INSERT OR IGNORE INTO subscribers (email, created_at_ms) VALUES (?, ?)',
+      [email, Date.now()],
+    );
+    broadcastToAdmins({
+      type: 'subscriber:created',
+      email,
+    });
+    res.json({ ok: true, message: 'Welcome to the NORVA private circle.' });
+  });
+
+  // --------------------------------------------------------------------------
+  // PERSISTENT ORDER SUBMISSION WITH DUPLICATE PROTECTION & STOCK CHECK
+  // --------------------------------------------------------------------------
+  app.post('/api/orders', async (req: Request, res: Response) => {
     try {
       const body = req.body ?? {};
-      const customerInput = body.customer ?? {};
-      const rawItems = Array.isArray(body.items) ? body.items : [];
       const idempotencyKey =
         typeof body.idempotencyKey === 'string' && body.idempotencyKey.trim().length >= 8
-          ? body.idempotencyKey.trim().slice(0, 120)
+          ? body.idempotencyKey.trim()
           : null;
 
-      // 1. Check Idempotency Key first (prevents duplicate submissions on double-click or retry)
+      // 1. Check Idempotency Key
       if (idempotencyKey) {
-        const existingByKey = db
-          .prepare('SELECT * FROM orders WHERE idempotency_key = ?')
-          .get(idempotencyKey) as unknown as RawOrderRow | undefined;
+        const existingByKey = await db.queryOne<RawOrderRow>(
+          'SELECT * FROM orders WHERE idempotency_key = ?',
+          [idempotencyKey],
+        );
         if (existingByKey) {
-          const existingDto = hydrateOrders([existingByKey], false)[0];
+          const hydrated = await hydrateOrders([existingByKey], false);
           res.status(200).json({
             ok: true,
-            duplicatePrevented: true,
-            order: existingDto,
+            order: hydrated[0],
             lookupToken: existingByKey.lookup_token,
+            duplicatePrevented: true,
           });
           return;
         }
       }
 
-      const rawPaymentMethod =
-        typeof body.paymentMethod === 'string' ? body.paymentMethod.trim().toLowerCase() : 'cod';
-      if (rawPaymentMethod !== 'cod' && rawPaymentMethod !== 'invoice') {
-        res.status(400).json({
-          ok: false,
-          error: 'Unsupported payment method selected. Please choose Cash on Delivery or Bank Transfer.',
-        });
-        return;
-      }
-      const paymentMethod: 'cod' | 'invoice' = rawPaymentMethod === 'invoice' ? 'invoice' : 'cod';
-
-      const fullName = String(customerInput.fullName ?? '').trim();
-      const email = String(customerInput.email ?? '').trim();
-      const phone = String(customerInput.phone ?? '').trim();
-      const address = String(customerInput.address ?? '').trim();
-      const city = String(customerInput.city ?? '').trim();
-      const postalCode = String(customerInput.postalCode ?? '').trim().slice(0, 30);
-      const country = String(customerInput.country ?? 'Pakistan').trim().slice(0, 80) || 'Pakistan';
+      // 2. Validate Customer Details
+      const rawCustomer = body.customer ?? {};
+      const fullName = String(rawCustomer.fullName ?? '').trim();
+      const phone = String(rawCustomer.phone ?? '').trim();
       const phoneDigits = normalizePhoneDigits(phone);
+      const email = String(rawCustomer.email ?? '').trim().toLowerCase();
+      const address = String(rawCustomer.address ?? rawCustomer.addressLine1 ?? '').trim();
+      const city = String(rawCustomer.city ?? '').trim();
+      const postalCode = String(rawCustomer.postalCode ?? '').trim();
+      const country = String(rawCustomer.country ?? 'Pakistan').trim();
+      const giftNote = String(rawCustomer.notes ?? body.giftNote ?? '').trim().slice(0, 500);
 
-      if (fullName.length < 2 || fullName.length > 120) {
+      if (!fullName || fullName.length < 2) {
         res.status(400).json({
           ok: false,
-          error: 'Please enter the recipient’s full name.',
+          error: 'Please enter your full recipient name for delivery.',
         });
         return;
       }
 
-      if (email.length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      if (!phone || phoneDigits.length < 10) {
         res.status(400).json({
           ok: false,
           error:
-            'Please enter a valid email address, or leave the email field blank for Cash on Delivery.',
+            'Please enter a valid Pakistani phone number (e.g. 0300-1234567) so the courier can contact you.',
         });
         return;
       }
 
-      if (phoneDigits.length < 7 || phoneDigits.length > 15) {
-        res.status(400).json({
-          ok: false,
-          error: 'Please enter a valid 10 or 11-digit mobile / WhatsApp phone number (e.g. 0300-1234567).',
-        });
-        return;
-      }
-
-      if (address.length < 4 || address.length > 400) {
+      if (!address || address.length < 5) {
         res.status(400).json({
           ok: false,
           error: 'Please enter your complete street and house delivery address.',
@@ -2085,24 +1577,27 @@ export function createExpressApp(): express.Express {
         return;
       }
 
-      if (city.length < 2 || city.length > 100) {
+      if (!city || city.length < 2) {
         res.status(400).json({
           ok: false,
-          error: 'Please select or enter your delivery city.',
+          error: 'Please enter or select your delivery city.',
         });
         return;
       }
 
+      // 3. Validate Cart Items Against Catalog
+      const rawItems = Array.isArray(body.items) ? body.items : [];
       if (rawItems.length === 0) {
         res.status(400).json({
           ok: false,
-          error: 'Your shopping bag is empty. Please add at least one fragrance before ordering.',
+          error: 'Your shopping bag is empty. Please select a fragrance to place an order.',
         });
         return;
       }
 
-      const overrides = getProductOverridesMap();
+      const overrides = await getProductOverridesMap();
       const catalogById = new Map(CATALOG_DEFAULTS.map((c) => [c.id, c]));
+
       const sanitizedItems: OrderItemRecord[] = [];
       const qtyByProductId = new Map<string, { qty: number; name: string }>();
 
@@ -2136,195 +1631,134 @@ export function createExpressApp(): express.Express {
 
         const quantity = Math.floor(parsedQty);
         const unitPrice = overrides[productId]?.price ?? catalogProduct.defaultPrice;
-        if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
-          res.status(400).json({
-            ok: false,
-            error: `Invalid price configuration for ${catalogProduct.name}.`,
-          });
-          return;
-        }
-
-        const name = catalogProduct.name;
-        const prevQty = qtyByProductId.get(productId)?.qty ?? 0;
-        qtyByProductId.set(productId, { qty: prevQty + quantity, name });
+        const key = String(raw.key || `${productId}__NV-50`);
+        const sizeLabel = String(raw.sizeLabel || '50ml');
+        const sizeSku = String(raw.sizeSku || 'NV-50');
+        const concentration = String(raw.concentration || 'Extrait de Parfum');
+        const image = typeof raw.image === 'string' && raw.image.length <= 2048 ? raw.image : '';
 
         sanitizedItems.push({
-          key: String(raw.key ?? `${productId}__default`).slice(0, 120),
+          key,
           productId,
-          slug: String(raw.slug ?? productId).slice(0, 120),
-          name,
-          concentration: String(raw.concentration ?? 'Extrait de Parfum').slice(0, 80),
-          image: typeof raw.image === 'string' && raw.image.length <= 2048 ? raw.image : '',
-          sizeLabel: String(raw.sizeLabel ?? '50ml').slice(0, 40),
-          sizeSku: String(raw.sizeSku ?? `${productId.toUpperCase()}-50`).slice(0, 60),
+          slug: String(raw.slug || productId),
+          name: catalogProduct.name,
+          concentration,
+          image,
+          sizeLabel,
+          sizeSku,
           unitPrice,
           quantity,
         });
+
+        const currentAgg = qtyByProductId.get(productId) ?? { qty: 0, name: catalogProduct.name };
+        currentAgg.qty += quantity;
+        qtyByProductId.set(productId, currentAgg);
       }
 
-      if (sanitizedItems.length === 0) {
-        res.status(400).json({
-          ok: false,
-          error: 'No valid products were included in the order.',
-        });
-        return;
-      }
+      // 4. Server-Side Totals Computation
+      const subtotal = sanitizedItems.reduce((acc, it) => acc + it.unitPrice * it.quantity, 0);
+      const shippingSpeed = body.shippingSpeed === 'express' ? 'express' : 'standard';
+      const shippingCalc = await calculateShippingForCity(city, shippingSpeed, subtotal);
+      const shippingCost = shippingCalc.cost;
 
-      const subtotal = sanitizedItems.reduce(
-        (sum, item) => sum + item.unitPrice * item.quantity,
-        0,
-      );
-
-      if (!Number.isFinite(subtotal) || subtotal <= 0) {
-        res.status(400).json({
-          ok: false,
-          error: 'Invalid order subtotal. Please review your shopping bag and try again.',
-        });
-        return;
-      }
-
-      // Validate Coupon if provided
-      const rawCoupon =
-        typeof body.couponCode === 'string' ? body.couponCode.trim().toUpperCase() : '';
-      let couponCode: string | null = null;
       let discountAmount = 0;
-
-      if (rawCoupon) {
-        const couponEval = evaluateCoupon(rawCoupon, subtotal);
-        if (!couponEval.ok) {
-          res.status(400).json({
-            ok: false,
-            error: couponEval.error,
-          });
-          return;
+      let couponCode: string | null = null;
+      if (typeof body.couponCode === 'string' && body.couponCode.trim()) {
+        const evalResult = await evaluateCoupon(body.couponCode, subtotal);
+        if (evalResult.ok) {
+          discountAmount = evalResult.discountAmount;
+          couponCode = evalResult.coupon.code;
         }
-        couponCode = couponEval.coupon.code;
-        discountAmount = couponEval.discountAmount;
       }
-
-      // Validate Shipping Speed & Calculate City-Based Shipping Cost
-      const rawShippingSpeed =
-        typeof body.shippingSpeed === 'string' ? body.shippingSpeed.trim().toLowerCase() : 'standard';
-      if (rawShippingSpeed !== 'standard' && rawShippingSpeed !== 'express') {
-        res.status(400).json({
-          ok: false,
-          error: 'Invalid delivery method selected. Please choose Standard or Express shipping.',
-        });
-        return;
-      }
-      const shippingSpeed: 'standard' | 'express' =
-        rawShippingSpeed === 'express' ? 'express' : 'standard';
-      const shippingCalc = calculateShippingForCity(city, shippingSpeed, subtotal);
-      const shippingCost = Math.max(0, Math.round(shippingCalc.cost));
 
       const total = Math.max(0, subtotal - discountAmount + shippingCost);
-      if (!Number.isFinite(total) || total < 0) {
-        res.status(400).json({
-          ok: false,
-          error: 'Unable to calculate order total. Please verify your bag and shipping selection.',
-        });
-        return;
-      }
+      const paymentMethod = body.paymentMethod === 'invoice' ? 'invoice' : 'cod';
 
-      const giftNote =
-        typeof body.giftNote === 'string' && body.giftNote.trim()
-          ? body.giftNote.trim().slice(0, 500)
-          : null;
-
-      // 2. Content Fingerprint Anti-Duplicate Guard (60s window)
-      const itemsSig = sanitizedItems
-        .map((i) => `${i.productId}:${i.sizeSku}:${i.quantity}`)
-        .sort()
-        .join('|');
+      // 5. Short-window anti-spam fingerprinting
       const fingerprintHash = sha256Hex(
-        `${phoneDigits}|${email.toLowerCase()}|${city.toLowerCase()}|${total}|${itemsSig}`,
+        `${phoneDigits}::${city.toLowerCase()}::${subtotal}::${sanitizedItems
+          .map((i) => `${i.productId}:${i.quantity}`)
+          .sort()
+          .join('|')}`,
+      );
+      const now = Date.now();
+      const recentDup = await db.queryOne<RawOrderRow>(
+        'SELECT * FROM orders WHERE fingerprint_hash = ? AND created_at_ms >= ? ORDER BY created_at_ms DESC',
+        [fingerprintHash, now - DUPLICATE_ORDER_WINDOW_MS],
       );
 
-      const now = new Date();
-      const createdAtMs = now.getTime();
-
-      const recentDuplicate = db
-        .prepare(
-          `SELECT * FROM orders
-           WHERE fingerprint_hash = ? AND created_at_ms >= ? AND status != 'Cancelled'
-           ORDER BY created_at_ms DESC LIMIT 1`,
-        )
-        .get(fingerprintHash, createdAtMs - DUPLICATE_ORDER_WINDOW_MS) as unknown as
-        | RawOrderRow
-        | undefined;
-
-      if (recentDuplicate) {
-        const existingDto = hydrateOrders([recentDuplicate], false)[0];
+      if (recentDup) {
+        const hydrated = await hydrateOrders([recentDup], false);
         res.status(200).json({
           ok: true,
+          order: hydrated[0],
+          lookupToken: recentDup.lookup_token,
           duplicatePrevented: true,
-          order: existingDto,
-          lookupToken: recentDuplicate.lookup_token,
         });
         return;
       }
 
-      const orderNumber = generateUniqueOrderNumber();
-      const lookupToken = crypto.randomBytes(32).toString('hex');
-      const createdAtIso = now.toISOString();
-      const createdAt = now.toLocaleString('en-US', {
-        year: 'numeric',
+      // 6. Generate IDs
+      const orderNumber = await generateUniqueOrderNumber();
+      const lookupToken = `tok_${crypto.randomBytes(16).toString('hex')}`;
+      const createdAtMs = now;
+      const createdAtIso = new Date(now).toISOString();
+      const createdAt = new Date(now).toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
       });
 
-      db.exec('BEGIN IMMEDIATE TRANSACTION');
-      try {
-        // Atomic Stock Verification & Deduction inside transaction
+      // 7. Atomic Transaction: Stock check, stock deduction, coupon count increment, and order insertion
+      await db.transaction(async (tx) => {
+        // Stock Verification & Deduction
         for (const [prodId, reqInfo] of qtyByProductId.entries()) {
-          const stockRow = db
-            .prepare('SELECT stock_units, in_stock FROM product_overrides WHERE product_id = ?')
-            .get(prodId) as { stock_units: number | null; in_stock: number | null } | undefined;
+          const stockRow = await tx.queryOne<{ stock_units: number | null; in_stock: number | null }>(
+            'SELECT stock_units, in_stock FROM product_overrides WHERE product_id = ?',
+            [prodId],
+          );
 
-          const availableUnits = stockRow?.stock_units ?? 48;
-          const isAvailable = stockRow?.in_stock === null || stockRow?.in_stock === undefined ? true : stockRow.in_stock === 1;
+          const availableUnits = stockRow?.stock_units !== null && stockRow?.stock_units !== undefined
+            ? Number(stockRow.stock_units)
+            : 48;
+          const isAvailable =
+            stockRow?.in_stock === null || stockRow?.in_stock === undefined
+              ? true
+              : Number(stockRow.in_stock) === 1;
 
           if (!isAvailable || availableUnits <= 0) {
-            db.exec('ROLLBACK');
-            res.status(409).json({
-              ok: false,
-              error: `${reqInfo.name} is currently out of stock.`,
-            });
-            return;
+            throw new Error(`${reqInfo.name} is currently out of stock.`);
           }
 
           if (availableUnits < reqInfo.qty) {
-            db.exec('ROLLBACK');
-            res.status(409).json({
-              ok: false,
-              error: `Only ${availableUnits} flacon(s) of ${reqInfo.name} remain in stock. Please adjust your bag quantity.`,
-            });
-            return;
+            throw new Error(
+              `Only ${availableUnits} flacon(s) of ${reqInfo.name} remain in stock. Please adjust your bag quantity.`,
+            );
           }
 
           const nextUnits = availableUnits - reqInfo.qty;
           const nextInStock = nextUnits > 0 ? 1 : 0;
 
-          db.prepare(
+          await tx.execute(
             `INSERT INTO product_overrides (product_id, stock_units, in_stock, updated_at_ms)
              VALUES (?, ?, ?, ?)
              ON CONFLICT(product_id) DO UPDATE SET
-               stock_units = excluded.stock_units,
-               in_stock = excluded.in_stock,
-               updated_at_ms = excluded.updated_at_ms`,
-          ).run(prodId, nextUnits, nextInStock, createdAtMs);
-        }
-
-        // Atomic Coupon Usage Increment
-        if (couponCode) {
-          db.prepare('UPDATE coupons SET used_count = used_count + 1 WHERE code = ?').run(
-            couponCode,
+               stock_units = EXCLUDED.stock_units,
+               in_stock = EXCLUDED.in_stock,
+               updated_at_ms = EXCLUDED.updated_at_ms`,
+            [prodId, nextUnits, nextInStock, createdAtMs],
           );
         }
 
-        db.prepare(
+        // Coupon Usage Increment
+        if (couponCode) {
+          await tx.execute('UPDATE coupons SET used_count = used_count + 1 WHERE code = ?', [
+            couponCode,
+          ]);
+        }
+
+        await tx.execute(
           `INSERT INTO orders (
             order_number, lookup_token, idempotency_key, fingerprint_hash, stock_deducted,
             status, payment_method, payment_status,
@@ -2334,256 +1768,116 @@ export function createExpressApp(): express.Express {
             customer_address, customer_city, customer_postal_code, customer_country,
             is_seen_by_admin, created_at, created_at_iso, created_at_ms, updated_at_iso
           ) VALUES (?, ?, ?, ?, 1, 'Pending', ?, 'Pending', ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
-        ).run(
-          orderNumber,
-          lookupToken,
-          idempotencyKey,
-          fingerprintHash,
-          paymentMethod,
-          shippingSpeed,
-          subtotal,
-          discountAmount,
-          shippingCost,
-          total,
-          couponCode,
-          giftNote,
-          fullName,
-          email,
-          phone,
-          phoneDigits,
-          address,
-          city,
-          postalCode,
-          country,
-          createdAt,
-          createdAtIso,
-          createdAtMs,
-          createdAtIso,
-        );
-
-        const insertItemStmt = db.prepare(
-          `INSERT INTO order_items (
-            order_number, item_key, product_id, slug, name, concentration,
-            image, size_label, size_sku, unit_price, quantity
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            orderNumber,
+            lookupToken,
+            idempotencyKey,
+            fingerprintHash,
+            paymentMethod,
+            shippingSpeed,
+            subtotal,
+            discountAmount,
+            shippingCost,
+            total,
+            couponCode,
+            giftNote,
+            fullName,
+            email,
+            phone,
+            phoneDigits,
+            address,
+            city,
+            postalCode,
+            country,
+            createdAt,
+            createdAtIso,
+            createdAtMs,
+            createdAtIso,
+          ],
         );
 
         for (const item of sanitizedItems) {
-          insertItemStmt.run(
-            orderNumber,
-            item.key,
-            item.productId,
-            item.slug,
-            item.name,
-            item.concentration,
-            item.image,
-            item.sizeLabel,
-            item.sizeSku,
-            item.unitPrice,
-            item.quantity,
+          await tx.execute(
+            `INSERT INTO order_items (
+              order_number, item_key, product_id, slug, name, concentration,
+              image, size_label, size_sku, unit_price, quantity
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              orderNumber,
+              item.key,
+              item.productId,
+              item.slug,
+              item.name,
+              item.concentration,
+              item.image,
+              item.sizeLabel,
+              item.sizeSku,
+              item.unitPrice,
+              item.quantity,
+            ],
           );
         }
+      });
 
-        db.exec('COMMIT');
-      } catch (txErr) {
-        try {
-          db.exec('ROLLBACK');
-        } catch {}
-        throw txErr;
-      }
-
-      checkpointDatabase();
-
-      const adminOrder = getOrderByNumber(orderNumber, true);
-      const buyerOrder = getOrderByNumber(orderNumber, false);
-      const unseenCount = getUnseenOrderCount();
-      const updatedOverrides = getProductOverridesMap();
+      const adminOrder = await getOrderByNumber(orderNumber, true);
+      const buyerOrder = await getOrderByNumber(orderNumber, false);
 
       if (adminOrder) {
         broadcastToAdmins({
           type: 'order:created',
           order: adminOrder,
-          unseenCount,
-          productOverrides: updatedOverrides,
-          coupons: getAllCoupons(),
+          unseenCount: await getUnseenOrderCount(),
+          productOverrides: await getProductOverridesMap(),
+          coupons: await getAllCoupons(),
         });
       }
 
       res.status(201).json({
         ok: true,
-        order: buyerOrder,
+        order: buyerOrder ?? adminOrder,
         lookupToken,
-        productOverrides: updatedOverrides,
+        productOverrides: await getProductOverridesMap(),
       });
     } catch (err) {
-      console.error('Failed to save customer order:', err);
-      res.status(500).json({
+      console.error('[Order Placement Error]', err);
+      const msg = err instanceof Error ? err.message : 'Unable to complete order placement.';
+      const statusCode = msg.includes('stock') ? 409 : 500;
+      res.status(statusCode).json({
         ok: false,
-        error: 'Unable to save your order right now. Please try again in a moment.',
+        error: msg,
       });
     }
   });
 
-  // Buyer-only order receipt lookup using unguessable per-order lookup tokens
-  app.post('/api/orders/lookup', (req: Request, res: Response) => {
-    const rawTokens = Array.isArray(req.body?.tokens) ? req.body.tokens : [];
-    const tokens = rawTokens
-      .filter((t: unknown): t is string => typeof t === 'string' && t.length >= 32)
-      .slice(0, 50);
-
-    if (tokens.length === 0) {
-      res.json({ ok: true, orders: [] });
-      return;
-    }
-
-    const placeholders = tokens.map(() => '?').join(', ');
-    const rows = db
-      .prepare(
-        `SELECT * FROM orders
-         WHERE lookup_token IN (${placeholders})
-         ORDER BY created_at_ms DESC`,
-      )
-      .all(...tokens) as unknown as RawOrderRow[];
-
-    res.json({
-      ok: true,
-      orders: hydrateOrders(rows, false),
-    });
-  });
-
-  // Public Concierge Inquiry submission
-  app.post('/api/inquiries', (req: Request, res: Response) => {
-    const name = String(req.body?.name ?? '').trim();
-    const email = String(req.body?.email ?? '').trim();
-    const topic = String(req.body?.topic ?? 'General Inquiry').trim();
-    const message = String(req.body?.message ?? '').trim();
-
-    if (!name || !email || !message) {
-      res.status(400).json({ ok: false, error: 'Name, email, and message are required.' });
-      return;
-    }
-
-    const id = `inq-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
-    const now = new Date();
-    const createdAt = now.toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-
-    db.prepare(
-      `INSERT INTO inquiries (id, name, email, topic, message, created_at, created_at_ms, resolved)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
-    ).run(id, name, email, topic, message, createdAt, now.getTime());
-
-    checkpointDatabase();
-
-    const inquiry: InquiryDto = {
-      id,
-      name,
-      email,
-      topic,
-      message,
-      createdAt,
-      resolved: false,
-    };
-
-    broadcastToAdmins({ type: 'inquiry:created', inquiry });
-    res.status(201).json({ ok: true, inquiry });
-  });
-
-  // Public Newsletter subscription
-  app.post('/api/subscribers', (req: Request, res: Response) => {
-    const email = String(req.body?.email ?? '')
-      .trim()
-      .toLowerCase();
-    if (!email || !email.includes('@')) {
-      res.status(400).json({ ok: false, error: 'Valid email is required.' });
-      return;
-    }
-
-    db.prepare(`INSERT OR IGNORE INTO subscribers (email, created_at_ms) VALUES (?, ?)`).run(
-      email,
-      Date.now(),
-    );
-    checkpointDatabase();
-
-    broadcastToAdmins({ type: 'subscriber:created', email });
-    res.status(201).json({ ok: true });
-  });
-
   // --------------------------------------------------------------------------
-  // EXPLICITLY BLOCK ALL PUBLIC REGISTRATION ENDPOINTS
+  // AUTHENTICATED ADMIN API ENDPOINTS
   // --------------------------------------------------------------------------
-  app.all(
-    [
-      '/api/register',
-      '/api/signup',
-      '/api/auth/register',
-      '/api/auth/signup',
-      '/api/admin/register',
-      '/api/admin/signup',
-      '/api/users/register',
-    ],
-    (_req: Request, res: Response) => {
-      res.status(403).json({
-        ok: false,
-        error: 'Public registration is strictly disabled. Administrator accounts are provisioned privately on the server.',
+  app.get('/api/admin/auth-status', async (_req: Request, res: Response) => {
+    try {
+      const ownerCountRow = await db.queryOne<{ cnt: string | number }>(
+        "SELECT COUNT(*) AS cnt FROM admin_users WHERE role = 'owner' AND is_active = 1",
+      );
+      const isOwnerActive = Number(ownerCountRow?.cnt ?? 0) > 0;
+      res.json({
+        ok: true,
+        isConfigured: isOwnerActive,
+        setupTokenRequired: !isOwnerActive,
       });
-    },
-  );
-
-  // --------------------------------------------------------------------------
-  // ADMIN AUTHENTICATION, ACTIVATION & BLANKET ROUTE GUARD
-  // --------------------------------------------------------------------------
-  // Blanket guard: protect EVERY /api/admin/* route except auth-status, login, logout, and secret-gated activate
-  app.use('/api/admin', (req: Request, res: Response, next: NextFunction) => {
-    if (req.method === 'GET' && req.path === '/auth-status') {
-      next();
-      return;
+    } catch (err) {
+      console.error('[Admin Auth Status Error]', err);
+      res.status(500).json({ ok: false, error: 'Database check failed.' });
     }
-    if (
-      req.method === 'POST' &&
-      (req.path === '/login' || req.path === '/logout' || req.path === '/activate')
-    ) {
-      next();
-      return;
-    }
-    requireAdminAuth(req, res, next);
   });
 
-  // Safe non-sensitive diagnostic endpoint (never exposes usernames, hashes, or tokens)
-  app.get('/api/admin/auth-status', (_req: Request, res: Response) => {
-    const ownerStats = db
-      .prepare(
-        `SELECT COUNT(*) AS totalCount,
-                SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) AS activeCount
-         FROM admin_users`,
-      )
-      .get() as { totalCount: number; activeCount: number | null } | undefined;
-
-    const configuredSetupToken = stripSurroundingQuotes(process.env.ADMIN_SETUP_TOKEN || '');
-    const envHash = normalizeBcryptHashFromEnv(process.env.ADMIN_PASSWORD_HASH);
-
-    res.json({
-      ok: true,
-      accountInitialized: Number(ownerStats?.totalCount ?? 0) > 0,
-      accountActive: Number(ownerStats?.activeCount ?? 0) > 0,
-      setupTokenConfigured: configuredSetupToken.length >= 8,
-      envHashConfigured: /^\$2[ab]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(envHash),
-      persistentStorage: !isEphemeralFallback,
-    });
-  });
-
-  // Server-side bcrypt login with per-IP rate limiting & per-account brute-force lockout
+  // Server-side bcrypt login with safe IP rate limiting & per-account brute-force lockout
   app.post('/api/admin/login', async (req: Request, res: Response) => {
     try {
       const clientIp = getClientIp(req);
       if (isIpRateLimited(clientIp)) {
         res.status(429).json({
           ok: false,
-          error: 'Too many failed sign-in attempts from this network. Please wait 10 minutes before retrying.',
+          error:
+            'Too many failed sign-in attempts from this network. Please wait 10 minutes before retrying.',
         });
         return;
       }
@@ -2602,13 +1896,15 @@ export function createExpressApp(): express.Express {
         return;
       }
 
-      const userRow = db
-        .prepare('SELECT * FROM admin_users WHERE LOWER(username) = ?')
-        .get(rawIdentifier) as unknown as AdminUserRow | undefined;
+      const userRow = await db.queryOne<AdminUserRow>(
+        'SELECT * FROM admin_users WHERE LOWER(username) = ?',
+        [rawIdentifier],
+      );
 
       const now = Date.now();
-      if (userRow && userRow.locked_until_ms > now) {
-        const minsLeft = Math.max(1, Math.ceil((userRow.locked_until_ms - now) / 60000));
+      const lockedUntil = Number(userRow?.locked_until_ms || 0);
+      if (userRow && lockedUntil > now) {
+        const minsLeft = Math.max(1, Math.ceil((lockedUntil - now) / 60000));
         res.status(429).json({
           ok: false,
           error: `Account temporarily locked after repeated failed attempts. Try again in ${minsLeft} minute(s).`,
@@ -2638,20 +1934,20 @@ export function createExpressApp(): express.Express {
       if (!userRow || !passwordValid) {
         recordIpFailedAttempt(clientIp);
         if (userRow) {
-          const nextFailures = (userRow.failed_attempts || 0) + 1;
+          const nextFailures = (Number(userRow.failed_attempts) || 0) + 1;
           const nextLockUntil =
             nextFailures >= MAX_FAILED_LOGIN_ATTEMPTS ? now + ACCOUNT_LOCKOUT_MS : 0;
-          db.prepare(
+          await db.execute(
             `UPDATE admin_users
              SET failed_attempts = ?, locked_until_ms = ?, updated_at_iso = ?
              WHERE username = ?`,
-          ).run(
-            nextFailures >= MAX_FAILED_LOGIN_ATTEMPTS ? 0 : nextFailures,
-            nextLockUntil,
-            new Date(now).toISOString(),
-            userRow.username,
+            [
+              nextFailures >= MAX_FAILED_LOGIN_ATTEMPTS ? 0 : nextFailures,
+              nextLockUntil,
+              new Date(now).toISOString(),
+              userRow.username,
+            ],
           );
-          checkpointDatabase();
         }
         res.status(401).json({
           ok: false,
@@ -2660,7 +1956,7 @@ export function createExpressApp(): express.Express {
         return;
       }
 
-      if (userRow.is_active !== 1) {
+      if (Number(userRow.is_active) !== 1) {
         res.status(403).json({
           ok: false,
           error: 'Administrator account is inactive and requires server-side activation.',
@@ -2671,13 +1967,14 @@ export function createExpressApp(): express.Express {
       // Reset failure counters and record login timestamp
       clearIpFailedAttempts(clientIp);
       const nowIso = new Date(now).toISOString();
-      db.prepare(
+      await db.execute(
         `UPDATE admin_users
          SET failed_attempts = 0, locked_until_ms = 0, last_login_at_iso = ?, updated_at_iso = ?
          WHERE username = ?`,
-      ).run(nowIso, nowIso, userRow.username);
+        [nowIso, nowIso, userRow.username],
+      );
 
-      db.prepare('DELETE FROM admin_sessions WHERE expires_at_ms <= ?').run(now);
+      await db.execute('DELETE FROM admin_sessions WHERE expires_at_ms <= ?', [now]);
 
       const rawToken = crypto.randomBytes(32).toString('hex');
       const tokenHash = sha256Hex(rawToken);
@@ -2686,19 +1983,11 @@ export function createExpressApp(): express.Express {
         minute: '2-digit',
       });
 
-      db.prepare(
+      await db.execute(
         `INSERT INTO admin_sessions (token_hash, username, email, logged_in_at, created_at_ms, expires_at_ms)
          VALUES (?, ?, ?, ?, ?, ?)`,
-      ).run(
-        tokenHash,
-        userRow.username,
-        userRow.username,
-        loggedInAt,
-        now,
-        now + SESSION_TTL_MS,
+        [tokenHash, userRow.username, userRow.username, loggedInAt, now, now + SESSION_TTL_MS],
       );
-
-      checkpointDatabase();
 
       const isHttps =
         req.secure ||
@@ -2720,10 +2009,14 @@ export function createExpressApp(): express.Express {
         },
       });
     } catch (err) {
-      console.error('Admin login error:', err);
+      console.error(
+        '[NORVA Admin Login Exception]',
+        err instanceof Error ? err.stack || err.message : err,
+      );
       res.status(500).json({
         ok: false,
-        error: 'Authentication error occurred. Please retry.',
+        error:
+          'Backend authentication error occurred. Please verify database connection and credentials in Vercel settings.',
       });
     }
   });
@@ -2736,160 +2029,154 @@ export function createExpressApp(): express.Express {
         res.status(403).json({
           ok: false,
           error:
-            'Owner setup/reset is locked. Set ADMIN_SETUP_TOKEN (at least 8 characters) in Server Secrets first.',
+            'ADMIN_SETUP_TOKEN is not configured on this server. Configure ADMIN_SETUP_TOKEN in Vercel environment variables to use activation.',
         });
         return;
       }
 
-      const providedSetupToken = stripSurroundingQuotes(
-        String(req.headers['x-setup-token'] ?? req.body?.setupToken ?? ''),
-      );
-      if (!safeCompareSecret(providedSetupToken, configuredSetupToken)) {
-        res.status(401).json({
+      const providedToken = String(req.body?.setupToken ?? '').trim();
+      if (!safeCompareSecret(providedToken, configuredSetupToken)) {
+        res.status(403).json({
           ok: false,
-          error: 'Invalid setup token. Verify ADMIN_SETUP_TOKEN in Server Secrets.',
+          error: 'Invalid setup token.',
         });
         return;
       }
 
-      const username = stripSurroundingQuotes(String(req.body?.username ?? ''))
-        .toLowerCase()
-        .replace(/^@+/, '');
-      const password = String(req.body?.password ?? '');
+      const rawUsername = String(req.body?.username ?? '').trim().toLowerCase().replace(/^@+/, '');
+      const rawPassword = String(req.body?.password ?? '');
 
-      if (!username || username.length < 3 || !/^[a-z0-9._@-]+$/.test(username)) {
+      if (!rawUsername || rawUsername.length < 3) {
         res.status(400).json({
           ok: false,
-          error: 'Valid admin username (min 3 characters) is required.',
-        });
-        return;
-      }
-      if (password.length < 8) {
-        res.status(400).json({
-          ok: false,
-          error: 'Admin password must be at least 8 characters.',
+          error: 'Username must be at least 3 characters.',
         });
         return;
       }
 
-      const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+      if (!rawPassword || rawPassword.length < 6) {
+        res.status(400).json({
+          ok: false,
+          error: 'Password must be at least 6 characters.',
+        });
+        return;
+      }
+
       const nowIso = new Date().toISOString();
+      const passwordHash = bcrypt.hashSync(rawPassword, BCRYPT_ROUNDS);
 
-      if (req.body?.replaceExistingOwners !== false) {
-        db.prepare(`DELETE FROM admin_users WHERE role = 'owner' AND username != ?`).run(username);
-      }
-
-      db.prepare(
+      await db.execute(
         `INSERT INTO admin_users (
           username, password_hash, role, is_active, failed_attempts, locked_until_ms, created_at_iso, updated_at_iso
         ) VALUES (?, ?, 'owner', 1, 0, 0, ?, ?)
         ON CONFLICT(username) DO UPDATE SET
-          password_hash = excluded.password_hash,
+          password_hash = EXCLUDED.password_hash,
           is_active = 1,
           failed_attempts = 0,
           locked_until_ms = 0,
-          updated_at_iso = excluded.updated_at_iso`,
-      ).run(username, passwordHash, nowIso, nowIso);
-
-      // Invalidate all existing admin sessions upon owner reset/activation
-      db.prepare('DELETE FROM admin_sessions').run();
-      checkpointDatabase();
-
-      res.json({
-        ok: true,
-        username,
-        message: `Owner account '${username}' initialized and activated with salted bcrypt (cost ${BCRYPT_ROUNDS}).`,
-      });
-    } catch (err) {
-      console.error('Admin activation error:', err);
-      res.status(500).json({ ok: false, error: 'Failed to activate admin account.' });
-    }
-  });
-
-  // Authenticated Admin Password Rotation (verifies current bcrypt hash & revokes other sessions)
-  app.post('/api/admin/change-password', requireAdminAuth, async (req: Request, res: Response) => {
-    try {
-      const session = (req as Request & { adminSession: AuthenticatedAdmin }).adminSession;
-      const currentPassword = String(req.body?.currentPassword ?? '');
-      const newPassword = String(req.body?.newPassword ?? '');
-
-      if (!currentPassword || !newPassword) {
-        res.status(400).json({
-          ok: false,
-          error: 'Both current password and new password are required.',
-        });
-        return;
-      }
-      if (newPassword.length < 8) {
-        res.status(400).json({
-          ok: false,
-          error: 'New password must be at least 8 characters long.',
-        });
-        return;
-      }
-
-      const userRow = db
-        .prepare('SELECT * FROM admin_users WHERE username = ?')
-        .get(session.username) as unknown as AdminUserRow | undefined;
-
-      if (!userRow) {
-        res.status(404).json({ ok: false, error: 'Admin account not found.' });
-        return;
-      }
-
-      const matchesCurrent = await bcrypt.compare(currentPassword, userRow.password_hash);
-      if (!matchesCurrent) {
-        res.status(401).json({
-          ok: false,
-          error: 'Current password is incorrect.',
-        });
-        return;
-      }
-
-      const nextHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
-      const nowIso = new Date().toISOString();
-      db.prepare(
-        `UPDATE admin_users
-         SET password_hash = ?, failed_attempts = 0, locked_until_ms = 0, updated_at_iso = ?
-         WHERE username = ?`,
-      ).run(nextHash, nowIso, userRow.username);
-
-      // Revoke all other sessions except the active session
-      db.prepare('DELETE FROM admin_sessions WHERE username = ? AND token_hash != ?').run(
-        userRow.username,
-        session.tokenHash,
+          updated_at_iso = EXCLUDED.updated_at_iso`,
+        [rawUsername, passwordHash, nowIso, nowIso],
       );
-      checkpointDatabase();
+
+      // Invalidate existing sessions on password reset
+      await db.execute('DELETE FROM admin_sessions');
 
       res.json({
         ok: true,
-        message: 'Administrator password updated with bcrypt hashing.',
+        message: `Admin account "${rawUsername}" successfully activated. You can now sign in.`,
       });
     } catch (err) {
-      console.error('Admin password change error:', err);
-      res.status(500).json({ ok: false, error: 'Failed to update password.' });
+      console.error('[Admin Activation Error]', err);
+      res.status(500).json({ ok: false, error: 'Failed to activate administrator account.' });
     }
   });
 
-  app.get('/api/admin/session', requireAdminAuth, (req: Request, res: Response) => {
-    const session = (req as Request & { adminSession: AuthenticatedAdmin }).adminSession;
+  // Authenticated Admin Password Change
+  app.post(
+    '/api/admin/change-password',
+    requireAdminAuth,
+    async (req: Request, res: Response) => {
+      try {
+        const admin = (req as unknown as { adminUser: AuthenticatedAdmin }).adminUser;
+        const currentPassword = String(req.body?.currentPassword ?? '');
+        const newPassword = String(req.body?.newPassword ?? '');
+
+        if (!currentPassword || !newPassword) {
+          res.status(400).json({
+            ok: false,
+            error: 'Please provide both your current and new password.',
+          });
+          return;
+        }
+
+        if (newPassword.length < 6) {
+          res.status(400).json({
+            ok: false,
+            error: 'New password must be at least 6 characters long.',
+          });
+          return;
+        }
+
+        const userRow = await db.queryOne<AdminUserRow>(
+          'SELECT * FROM admin_users WHERE username = ?',
+          [admin.username],
+        );
+
+        if (!userRow) {
+          res.status(404).json({ ok: false, error: 'Administrator record not found.' });
+          return;
+        }
+
+        const isValid = await bcrypt.compare(currentPassword, userRow.password_hash);
+        if (!isValid) {
+          res.status(401).json({ ok: false, error: 'Current password is not correct.' });
+          return;
+        }
+
+        const nowIso = new Date().toISOString();
+        const newHash = bcrypt.hashSync(newPassword, BCRYPT_ROUNDS);
+
+        await db.execute(
+          'UPDATE admin_users SET password_hash = ?, failed_attempts = 0, locked_until_ms = 0, updated_at_iso = ? WHERE username = ?',
+          [newHash, nowIso, admin.username],
+        );
+
+        // Keep current session valid, invalidate all other concurrent sessions
+        await db.execute(
+          'DELETE FROM admin_sessions WHERE username = ? AND token_hash != ?',
+          [admin.username, admin.tokenHash],
+        );
+
+        res.json({ ok: true, message: 'Password updated successfully.' });
+      } catch (err) {
+        console.error('[Change Password Error]', err);
+        res.status(500).json({ ok: false, error: 'Failed to update administrator password.' });
+      }
+    },
+  );
+
+  // Authenticated Admin Session Probe
+  app.get('/api/admin/session', requireAdminAuth, async (req: Request, res: Response) => {
+    const admin = (req as unknown as { adminUser: AuthenticatedAdmin }).adminUser;
+    const unseen = await getUnseenOrderCount();
     res.json({
       ok: true,
       session: {
-        username: session.username,
-        email: session.username,
-        loggedInAt: session.loggedInAt,
+        username: admin.username,
+        email: admin.email,
+        loggedInAt: admin.loggedInAt,
       },
-      unseenCount: getUnseenOrderCount(),
+      unseenCount: unseen,
     });
   });
 
-  app.post('/api/admin/logout', (req: Request, res: Response) => {
+  // Admin Logout
+  app.post('/api/admin/logout', async (req: Request, res: Response) => {
     const rawToken = extractRawAdminToken(req);
     if (rawToken) {
-      db.prepare('DELETE FROM admin_sessions WHERE token_hash = ?').run(sha256Hex(rawToken));
-      checkpointDatabase();
+      await db.execute('DELETE FROM admin_sessions WHERE token_hash = ?', [sha256Hex(rawToken)]);
     }
+
     const isHttps =
       req.secure ||
       req.headers['x-forwarded-proto'] === 'https' ||
@@ -2899,648 +2186,659 @@ export function createExpressApp(): express.Express {
       'Set-Cookie',
       `${ADMIN_COOKIE_NAME}=; Path=/; HttpOnly; ${cookiePolicy}; Max-Age=0`,
     );
+
     res.json({ ok: true });
   });
 
-  // --------------------------------------------------------------------------
-  // PROTECTED ADMIN ORDERS, ANALYTICS, SHIPPING, COUPONS & BACKUPS
-  // --------------------------------------------------------------------------
-  app.get('/api/admin/dashboard-data', requireAdminAuth, (_req: Request, res: Response) => {
-    const orders = getAllAdminOrders();
-    const unseenCount = getUnseenOrderCount();
-    res.json({
-      ok: true,
-      orders,
-      unseenCount,
-      inquiries: getAllInquiries(),
-      subscribers: getAllSubscribers(),
-      productOverrides: getProductOverridesMap(),
-      shippingRates: getShippingRates(false),
-      coupons: getAllCoupons(),
-      reviewsByProduct: getReviewsGroupedByProduct(),
-      analytics: computeSalesAnalytics(),
-      backups: listBackups(),
-    });
-  });
-
-  app.get('/api/admin/analytics', requireAdminAuth, (_req: Request, res: Response) => {
-    res.json({
-      ok: true,
-      analytics: computeSalesAnalytics(),
-    });
-  });
-
-  app.get('/api/admin/orders', requireAdminAuth, (req: Request, res: Response) => {
-    const orders = getAllAdminOrders({
-      q: typeof req.query.q === 'string' ? req.query.q : undefined,
-      orderId: typeof req.query.orderId === 'string' ? req.query.orderId : undefined,
-      phone: typeof req.query.phone === 'string' ? req.query.phone : undefined,
-      status: typeof req.query.status === 'string' ? req.query.status : undefined,
-      paymentStatus:
-        typeof req.query.paymentStatus === 'string' ? req.query.paymentStatus : undefined,
-      onlyNew: req.query.onlyNew === 'true' || req.query.onlyNew === '1',
-    });
-
-    res.json({
-      ok: true,
-      orders,
-      unseenCount: getUnseenOrderCount(),
-    });
-  });
-
-  app.get('/api/admin/orders/:orderNumber', requireAdminAuth, (req: Request, res: Response) => {
-    const orderNumber = String(req.params.orderNumber ?? '').trim();
-    const order = getOrderByNumber(orderNumber, true);
-    if (!order) {
-      res.status(404).json({ ok: false, error: 'Order not found.' });
-      return;
-    }
-    res.json({ ok: true, order });
-  });
-
-  app.post('/api/admin/orders/mark-all-seen', requireAdminAuth, (_req: Request, res: Response) => {
-    const nowIso = new Date().toISOString();
-    db.prepare(
-      'UPDATE orders SET is_seen_by_admin = 1, updated_at_iso = ? WHERE is_seen_by_admin = 0',
-    ).run(nowIso);
-    checkpointDatabase();
-
-    broadcastToAdmins({
-      type: 'orders:marked-seen',
-      unseenCount: 0,
-    });
-
-    res.json({
-      ok: true,
-      unseenCount: 0,
-    });
-  });
-
-  app.patch('/api/admin/orders/:orderNumber', requireAdminAuth, (req: Request, res: Response) => {
-    const orderNumber = String(req.params.orderNumber ?? '').trim();
-    const existing = db
-      .prepare('SELECT * FROM orders WHERE order_number = ?')
-      .get(orderNumber) as unknown as RawOrderRow | undefined;
-
-    if (!existing) {
-      res.status(404).json({ ok: false, error: 'Order not found.' });
-      return;
-    }
-
-    const body = req.body ?? {};
-    const prevStatus = normalizeOrderStatus(existing.status);
-    let nextStatus = prevStatus;
-    let nextPaymentStatus = normalizePaymentStatus(existing.payment_status);
-    let nextAdminNotes = existing.admin_notes ?? '';
-    let nextSeen = existing.is_seen_by_admin;
-    let nextStockDeducted = existing.stock_deducted ?? 1;
-
-    if (typeof body.status === 'string') {
-      const candidate = body.status === 'Dispatched' ? 'Shipped' : body.status;
-      if (!VALID_ORDER_STATUSES.has(candidate as OrderStatus)) {
-        res.status(400).json({ ok: false, error: `Invalid order status: ${body.status}` });
-        return;
-      }
-      nextStatus = candidate as OrderStatus;
-      nextSeen = 1;
-    }
-
-    if (typeof body.paymentStatus === 'string') {
-      if (!VALID_PAYMENT_STATUSES.has(body.paymentStatus as PaymentStatus)) {
-        res
-          .status(400)
-          .json({ ok: false, error: `Invalid payment status: ${body.paymentStatus}` });
-        return;
-      }
-      nextPaymentStatus = body.paymentStatus as PaymentStatus;
-      nextSeen = 1;
-    }
-
-    if (typeof body.adminNotes === 'string') {
-      nextAdminNotes = body.adminNotes.slice(0, 2000);
-    }
-
-    if (typeof body.isSeenByAdmin === 'boolean') {
-      nextSeen = body.isSeenByAdmin ? 1 : 0;
-    }
-
-    const updatedAtIso = new Date().toISOString();
-    const nowMs = Date.now();
-
-    db.exec('BEGIN IMMEDIATE TRANSACTION');
-    try {
-      // Automatically restock inventory if transitioning into Cancelled
-      if (nextStatus === 'Cancelled' && prevStatus !== 'Cancelled' && nextStockDeducted === 1) {
-        const items = db
-          .prepare('SELECT product_id, quantity FROM order_items WHERE order_number = ?')
-          .all(orderNumber) as unknown as { product_id: string; quantity: number }[];
-
-        for (const it of items) {
-          const cur = db
-            .prepare('SELECT stock_units FROM product_overrides WHERE product_id = ?')
-            .get(it.product_id) as { stock_units: number | null } | undefined;
-          const nextUnits = (cur?.stock_units ?? 0) + it.quantity;
-          db.prepare(
-            `UPDATE product_overrides SET stock_units = ?, in_stock = 1, updated_at_ms = ? WHERE product_id = ?`,
-          ).run(nextUnits, nowMs, it.product_id);
-        }
-        nextStockDeducted = 0;
-      } else if (
-        prevStatus === 'Cancelled' &&
-        nextStatus !== 'Cancelled' &&
-        nextStockDeducted === 0
-      ) {
-        const items = db
-          .prepare('SELECT product_id, quantity FROM order_items WHERE order_number = ?')
-          .all(orderNumber) as unknown as { product_id: string; quantity: number }[];
-
-        for (const it of items) {
-          const cur = db
-            .prepare('SELECT stock_units FROM product_overrides WHERE product_id = ?')
-            .get(it.product_id) as { stock_units: number | null } | undefined;
-          const nextUnits = Math.max(0, (cur?.stock_units ?? 48) - it.quantity);
-          db.prepare(
-            `UPDATE product_overrides SET stock_units = ?, in_stock = ?, updated_at_ms = ? WHERE product_id = ?`,
-          ).run(nextUnits, nextUnits > 0 ? 1 : 0, nowMs, it.product_id);
-        }
-        nextStockDeducted = 1;
-      }
-
-      db.prepare(
-        `UPDATE orders
-         SET status = ?, payment_status = ?, admin_notes = ?, is_seen_by_admin = ?, stock_deducted = ?, updated_at_iso = ?
-         WHERE order_number = ?`,
-      ).run(
-        nextStatus,
-        nextPaymentStatus,
-        nextAdminNotes,
-        nextSeen,
-        nextStockDeducted,
-        updatedAtIso,
-        orderNumber,
-      );
-
-      db.exec('COMMIT');
-    } catch (txErr) {
+  // Authenticated Admin Dashboard Bootstrapping Data
+  app.get(
+    '/api/admin/dashboard-data',
+    requireAdminAuth,
+    async (_req: Request, res: Response) => {
       try {
-        db.exec('ROLLBACK');
-      } catch {}
-      throw txErr;
-    }
+        const [
+          orders,
+          unseenCount,
+          inquiries,
+          subscribers,
+          productOverrides,
+          shippingRates,
+          coupons,
+          reviewsByProduct,
+          analytics,
+        ] = await Promise.all([
+          getAllAdminOrders(),
+          getUnseenOrderCount(),
+          getAllInquiries(),
+          getAllSubscribers(),
+          getProductOverridesMap(),
+          getShippingRates(false),
+          getAllCoupons(),
+          getReviewsGroupedByProduct(),
+          computeSalesAnalytics(),
+        ]);
 
-    checkpointDatabase();
+        res.setHeader('Cache-Control', 'no-cache');
+        res.json({
+          ok: true,
+          orders,
+          unseenCount,
+          inquiries,
+          subscribers,
+          productOverrides,
+          shippingRates,
+          coupons,
+          reviewsByProduct,
+          analytics,
+          backups: listBackups(),
+          database: {
+            engine: db.engine,
+            persistent: db.isPersistent,
+            connection: db.connectionInfo,
+          },
+        });
+      } catch (err) {
+        console.error('[Dashboard Data Error]', err);
+        res.status(500).json({ ok: false, error: 'Failed to fetch dashboard data.' });
+      }
+    },
+  );
 
-    const updatedOrder = getOrderByNumber(orderNumber, true);
-    const unseenCount = getUnseenOrderCount();
-    const productOverrides = getProductOverridesMap();
-
-    if (updatedOrder) {
-      broadcastToAdmins({
-        type: 'order:updated',
-        order: updatedOrder,
-        unseenCount,
-        productOverrides,
+  // Authenticated Sales Analytics Endpoint
+  app.get('/api/admin/analytics', requireAdminAuth, async (_req: Request, res: Response) => {
+    try {
+      res.json({
+        ok: true,
+        analytics: await computeSalesAnalytics(),
       });
+    } catch (err) {
+      console.error('[Admin Analytics Error]', err);
+      res.status(500).json({ ok: false, error: 'Failed to compute analytics.' });
     }
-
-    res.json({
-      ok: true,
-      order: updatedOrder,
-      unseenCount,
-      productOverrides,
-    });
   });
 
-  app.delete('/api/admin/orders/:orderNumber', requireAdminAuth, (req: Request, res: Response) => {
-    const orderNumber = String(req.params.orderNumber ?? '').trim();
-    const info = db.prepare('DELETE FROM orders WHERE order_number = ?').run(orderNumber);
-    if (info.changes === 0) {
-      res.status(404).json({ ok: false, error: 'Order not found.' });
-      return;
+  // Authenticated Orders List with Real-Time Filtering
+  app.get('/api/admin/orders', requireAdminAuth, async (req: Request, res: Response) => {
+    try {
+      const filters = {
+        q: typeof req.query.q === 'string' ? req.query.q : undefined,
+        orderId: typeof req.query.orderId === 'string' ? req.query.orderId : undefined,
+        phone: typeof req.query.phone === 'string' ? req.query.phone : undefined,
+        status: typeof req.query.status === 'string' ? req.query.status : undefined,
+        paymentStatus:
+          typeof req.query.paymentStatus === 'string' ? req.query.paymentStatus : undefined,
+        onlyNew: req.query.new === '1' || req.query.new === 'true',
+      };
+      const orders = await getAllAdminOrders(filters);
+      const unseenCount = await getUnseenOrderCount();
+      res.json({
+        ok: true,
+        orders,
+        unseenCount,
+      });
+    } catch (err) {
+      console.error('[Admin Orders Error]', err);
+      res.status(500).json({ ok: false, error: 'Failed to fetch orders.' });
     }
-
-    checkpointDatabase();
-    const unseenCount = getUnseenOrderCount();
-
-    broadcastToAdmins({
-      type: 'order:deleted',
-      orderNumber,
-      unseenCount,
-    });
-
-    res.json({
-      ok: true,
-      orderNumber,
-      unseenCount,
-    });
   });
 
-  // Admin SSE stream fallback for real-time order alerts
-  app.get('/api/admin/orders/stream', requireAdminAuth, (req: Request, res: Response) => {
+  // Get Individual Order Details
+  app.get(
+    '/api/admin/orders/:orderNumber',
+    requireAdminAuth,
+    async (req: Request, res: Response) => {
+      const order = await getOrderByNumber(req.params.orderNumber ?? '', true);
+      if (!order) {
+        res.status(404).json({ ok: false, error: 'Order not found.' });
+        return;
+      }
+      res.json({ ok: true, order });
+    },
+  );
+
+  // Mark all orders as seen
+  app.post(
+    '/api/admin/orders/mark-all-seen',
+    requireAdminAuth,
+    async (_req: Request, res: Response) => {
+      await db.execute('UPDATE orders SET is_seen_by_admin = 1 WHERE is_seen_by_admin = 0');
+      broadcastToAdmins({ type: 'orders:marked-seen' });
+      res.json({ ok: true });
+    },
+  );
+
+  // Update Order Status / Payment Status / Notes (with automatic stock restock on Cancelled)
+  app.patch(
+    '/api/admin/orders/:orderNumber',
+    requireAdminAuth,
+    async (req: Request, res: Response) => {
+      const orderNumber = String(req.params.orderNumber ?? '').trim().toUpperCase();
+      const existing = await getOrderByNumber(orderNumber, true);
+      if (!existing) {
+        res.status(404).json({ ok: false, error: `Order ${orderNumber} does not exist.` });
+        return;
+      }
+
+      const body = req.body ?? {};
+      const prevStatus = existing.status;
+      const nextStatus: OrderStatus =
+        body.status && VALID_ORDER_STATUSES.has(body.status) ? body.status : existing.status;
+      const nextPaymentStatus: PaymentStatus =
+        body.paymentStatus && VALID_PAYMENT_STATUSES.has(body.paymentStatus)
+          ? body.paymentStatus
+          : existing.paymentStatus;
+      const nextAdminNotes =
+        typeof body.adminNotes === 'string' ? body.adminNotes.trim() : existing.adminNotes || '';
+      const nextSeen = body.isNew !== undefined ? (body.isNew ? 0 : 1) : 1;
+
+      const rawRow = await db.queryOne<{ stock_deducted: number }>(
+        'SELECT stock_deducted FROM orders WHERE order_number = ?',
+        [orderNumber],
+      );
+      let nextStockDeducted = Number(rawRow?.stock_deducted ?? 1);
+      const updatedAtIso = new Date().toISOString();
+      const nowMs = Date.now();
+
+      await db.transaction(async (tx) => {
+        // Automatically restock inventory if transitioning into Cancelled
+        if (nextStatus === 'Cancelled' && prevStatus !== 'Cancelled' && nextStockDeducted === 1) {
+          const items = await tx.query<{ product_id: string; quantity: number }>(
+            'SELECT product_id, quantity FROM order_items WHERE order_number = ?',
+            [orderNumber],
+          );
+
+          for (const it of items) {
+            const cur = await tx.queryOne<{ stock_units: number | null }>(
+              'SELECT stock_units FROM product_overrides WHERE product_id = ?',
+              [it.product_id],
+            );
+            const nextUnits = Number(cur?.stock_units ?? 0) + Number(it.quantity);
+            await tx.execute(
+              `UPDATE product_overrides SET stock_units = ?, in_stock = 1, updated_at_ms = ? WHERE product_id = ?`,
+              [nextUnits, nowMs, it.product_id],
+            );
+          }
+          nextStockDeducted = 0;
+        } else if (
+          prevStatus === 'Cancelled' &&
+          nextStatus !== 'Cancelled' &&
+          nextStockDeducted === 0
+        ) {
+          const items = await tx.query<{ product_id: string; quantity: number }>(
+            'SELECT product_id, quantity FROM order_items WHERE order_number = ?',
+            [orderNumber],
+          );
+
+          for (const it of items) {
+            const cur = await tx.queryOne<{ stock_units: number | null }>(
+              'SELECT stock_units FROM product_overrides WHERE product_id = ?',
+              [it.product_id],
+            );
+            const nextUnits = Math.max(0, Number(cur?.stock_units ?? 48) - Number(it.quantity));
+            await tx.execute(
+              `UPDATE product_overrides SET stock_units = ?, in_stock = ?, updated_at_ms = ? WHERE product_id = ?`,
+              [nextUnits, nextUnits > 0 ? 1 : 0, nowMs, it.product_id],
+            );
+          }
+          nextStockDeducted = 1;
+        }
+
+        await tx.execute(
+          `UPDATE orders
+           SET status = ?, payment_status = ?, admin_notes = ?, is_seen_by_admin = ?, stock_deducted = ?, updated_at_iso = ?
+           WHERE order_number = ?`,
+          [
+            nextStatus,
+            nextPaymentStatus,
+            nextAdminNotes,
+            nextSeen,
+            nextStockDeducted,
+            updatedAtIso,
+            orderNumber,
+          ],
+        );
+      });
+
+      const updated = await getOrderByNumber(orderNumber, true);
+      if (updated) {
+        broadcastToAdmins({
+          type: 'order:updated',
+          order: updated,
+          unseenCount: await getUnseenOrderCount(),
+          productOverrides: await getProductOverridesMap(),
+        });
+      }
+
+      res.json({
+        ok: true,
+        order: updated,
+      });
+    },
+  );
+
+  // Delete an Order (Admin cleanup)
+  app.delete(
+    '/api/admin/orders/:orderNumber',
+    requireAdminAuth,
+    async (req: Request, res: Response) => {
+      const orderNumber = String(req.params.orderNumber ?? '').trim().toUpperCase();
+      const existing = await getOrderByNumber(orderNumber, true);
+      if (!existing) {
+        res.status(404).json({ ok: false, error: `Order ${orderNumber} does not exist.` });
+        return;
+      }
+
+      await db.execute('DELETE FROM orders WHERE order_number = ?', [orderNumber]);
+      broadcastToAdmins({
+        type: 'order:deleted',
+        orderNumber,
+      });
+
+      res.json({ ok: true });
+    },
+  );
+
+  // Admin Server-Sent Events Fallback for Real-Time Updates
+  app.get('/api/admin/orders/stream', requireAdminAuth, async (req: Request, res: Response) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders?.();
 
-    const initPayload = JSON.stringify({
-      type: 'init',
-      orders: getAllAdminOrders(),
-      unseenCount: getUnseenOrderCount(),
+    const sendEvent = (event: string, data: unknown) => {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    sendEvent('init', {
+      orders: await getAllAdminOrders(),
+      unseenCount: await getUnseenOrderCount(),
     });
-    res.write(`data: ${initPayload}\n\n`);
 
-    adminSseClients.add(res);
-    const keepAlive = setInterval(() => {
+    const intervalId = setInterval(async () => {
       try {
-        res.write(': ping\n\n');
+        sendEvent('ping', { time: Date.now() });
       } catch {
-        clearInterval(keepAlive);
-        adminSseClients.delete(res);
+        clearInterval(intervalId);
       }
     }, 25000);
 
     req.on('close', () => {
-      clearInterval(keepAlive);
-      adminSseClients.delete(res);
+      clearInterval(intervalId);
     });
   });
 
-  // Admin Product Inventory & Low-Stock Threshold Management
-  app.patch('/api/admin/products/:productId', requireAdminAuth, (req: Request, res: Response) => {
-    const productId = String(req.params.productId ?? '').trim();
-    if (!productId) {
-      res.status(400).json({ ok: false, error: 'Product ID required.' });
-      return;
-    }
+  // Admin Product Inventory & Pricing Overrides
+  app.patch(
+    '/api/admin/products/:productId',
+    requireAdminAuth,
+    async (req: Request, res: Response) => {
+      const productId = String(req.params.productId ?? '').trim();
+      const existing = (await getProductOverridesMap())[productId] ?? {};
 
-    const currentMap = getProductOverridesMap();
-    const merged: ProductOverrideDto = {
-      price: 2500,
-      stockUnits: 48,
-      lowStockThreshold: 10,
-      inStock: true,
-      ...(currentMap[productId] ?? {}),
-    };
+      const nextPrice =
+        req.body?.price !== undefined ? Math.max(1, Math.round(Number(req.body.price))) : existing.price;
+      const nextStock =
+        req.body?.stockUnits !== undefined
+          ? Math.max(0, Math.floor(Number(req.body.stockUnits)))
+          : existing.stockUnits ?? 48;
+      const nextThreshold =
+        req.body?.lowStockThreshold !== undefined
+          ? Math.max(1, Math.floor(Number(req.body.lowStockThreshold)))
+          : existing.lowStockThreshold ?? 10;
+      const nextInStock =
+        req.body?.inStock !== undefined
+          ? req.body.inStock
+            ? 1
+            : 0
+          : nextStock > 0
+            ? 1
+            : 0;
+      const nextBestSeller =
+        req.body?.isBestSeller !== undefined ? (req.body.isBestSeller ? 1 : 0) : existing.isBestSeller ? 1 : 0;
+      const nextNewArrival =
+        req.body?.isNewArrival !== undefined ? (req.body.isNewArrival ? 1 : 0) : existing.isNewArrival ? 1 : 0;
+      const nowMs = Date.now();
 
-    if (typeof req.body?.price === 'number' && req.body.price > 0) {
-      merged.price = Math.round(req.body.price);
-    }
-    if (typeof req.body?.stockUnits === 'number' && req.body.stockUnits >= 0) {
-      merged.stockUnits = Math.floor(req.body.stockUnits);
-    }
-    if (typeof req.body?.lowStockThreshold === 'number' && req.body.lowStockThreshold >= 0) {
-      merged.lowStockThreshold = Math.floor(req.body.lowStockThreshold);
-    }
-    if (typeof req.body?.inStock === 'boolean') {
-      merged.inStock = req.body.inStock;
-    }
-    if (typeof req.body?.isBestSeller === 'boolean') {
-      merged.isBestSeller = req.body.isBestSeller;
-    }
-    if (typeof req.body?.isNewArrival === 'boolean') {
-      merged.isNewArrival = req.body.isNewArrival;
-    }
+      await db.execute(
+        `INSERT INTO product_overrides (
+          product_id, price, stock_units, low_stock_threshold, in_stock, is_best_seller, is_new_arrival, updated_at_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(product_id) DO UPDATE SET
+          price = EXCLUDED.price,
+          stock_units = EXCLUDED.stock_units,
+          low_stock_threshold = EXCLUDED.low_stock_threshold,
+          in_stock = EXCLUDED.in_stock,
+          is_best_seller = EXCLUDED.is_best_seller,
+          is_new_arrival = EXCLUDED.is_new_arrival,
+          updated_at_ms = EXCLUDED.updated_at_ms`,
+        [
+          productId,
+          nextPrice ?? null,
+          nextStock,
+          nextThreshold,
+          nextInStock,
+          nextBestSeller,
+          nextNewArrival,
+          nowMs,
+        ],
+      );
 
-    db.prepare(
-      `INSERT INTO product_overrides (
-        product_id, price, stock_units, low_stock_threshold, in_stock, is_best_seller, is_new_arrival, updated_at_ms
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(product_id) DO UPDATE SET
-        price = excluded.price,
-        stock_units = excluded.stock_units,
-        low_stock_threshold = excluded.low_stock_threshold,
-        in_stock = excluded.in_stock,
-        is_best_seller = excluded.is_best_seller,
-        is_new_arrival = excluded.is_new_arrival,
-        updated_at_ms = excluded.updated_at_ms`,
-    ).run(
-      productId,
-      merged.price ?? 2500,
-      merged.stockUnits ?? 48,
-      merged.lowStockThreshold ?? 10,
-      merged.inStock === undefined ? 1 : merged.inStock ? 1 : 0,
-      merged.isBestSeller === undefined ? null : merged.isBestSeller ? 1 : 0,
-      merged.isNewArrival === undefined ? null : merged.isNewArrival ? 1 : 0,
-      Date.now(),
-    );
+      const overrides = await getProductOverridesMap();
+      broadcastToAdmins({
+        type: 'products:updated',
+        productOverrides: overrides,
+      });
 
-    checkpointDatabase();
-    const productOverrides = getProductOverridesMap();
-    broadcastToAdmins({ type: 'products:updated', productOverrides });
+      res.json({
+        ok: true,
+        productOverrides: overrides,
+      });
+    },
+  );
 
-    res.json({ ok: true, productOverrides });
-  });
+  app.post(
+    '/api/admin/products/reset',
+    requireAdminAuth,
+    async (_req: Request, res: Response) => {
+      await db.execute('DELETE FROM product_overrides');
+      await seedInitialStoreConfiguration(db);
+      const overrides = await getProductOverridesMap();
+      broadcastToAdmins({
+        type: 'products:updated',
+        productOverrides: overrides,
+      });
+      res.json({ ok: true, productOverrides: overrides });
+    },
+  );
 
-  app.post('/api/admin/products/reset', requireAdminAuth, (_req: Request, res: Response) => {
-    db.exec('DELETE FROM product_overrides');
-    seedInitialStoreConfiguration();
-    const productOverrides = getProductOverridesMap();
-    broadcastToAdmins({ type: 'products:updated', productOverrides });
-    res.json({ ok: true, productOverrides });
-  });
+  // Admin Shipping Rates Management
+  app.post(
+    '/api/admin/shipping-rates',
+    requireAdminAuth,
+    async (req: Request, res: Response) => {
+      const cityKey = String(req.body?.cityKey ?? '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, '-');
+      const cityName = String(req.body?.cityName ?? '').trim();
+      const standardFee = Math.max(0, Math.round(Number(req.body?.standardFee) || 0));
+      const expressFee = Math.max(0, Math.round(Number(req.body?.expressFee) || 0));
+      const freeShippingThreshold = Math.max(
+        0,
+        Math.round(Number(req.body?.freeShippingThreshold) || 5000),
+      );
+      const estimatedDays = String(req.body?.estimatedDays ?? '2–4 Working Days').trim();
+      const active = req.body?.active !== false ? 1 : 0;
+      const nowMs = Date.now();
 
-  // Admin City Shipping Rates Management
-  app.post('/api/admin/shipping-rates', requireAdminAuth, (req: Request, res: Response) => {
-    const rawCityName = String(req.body?.cityName ?? '').trim();
-    const isDefault = req.body?.cityKey === '__default__';
-    const cityKey = isDefault
-      ? '__default__'
-      : rawCityName.toLowerCase().replace(/\s+/g, ' ').trim();
+      if (!cityKey || !cityName) {
+        res.status(400).json({ ok: false, error: 'City key and display name are required.' });
+        return;
+      }
 
-    if (!cityKey || (!isDefault && !rawCityName)) {
-      res.status(400).json({ ok: false, error: 'City name is required.' });
-      return;
-    }
+      await db.execute(
+        `INSERT INTO shipping_rates (
+          city_key, city_name, standard_fee, express_fee, free_shipping_threshold, estimated_days, active, updated_at_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(city_key) DO UPDATE SET
+          city_name = EXCLUDED.city_name,
+          standard_fee = EXCLUDED.standard_fee,
+          express_fee = EXCLUDED.express_fee,
+          free_shipping_threshold = EXCLUDED.free_shipping_threshold,
+          estimated_days = EXCLUDED.estimated_days,
+          active = EXCLUDED.active,
+          updated_at_ms = EXCLUDED.updated_at_ms`,
+        [
+          cityKey,
+          cityName,
+          standardFee,
+          expressFee,
+          freeShippingThreshold,
+          estimatedDays,
+          active,
+          nowMs,
+        ],
+      );
 
-    const cityName = isDefault ? 'Other Cities (Nationwide)' : rawCityName;
-    const standardFee = Math.max(0, Math.round(Number(req.body?.standardFee) || 0));
-    const expressFee = Math.max(0, Math.round(Number(req.body?.expressFee) || 0));
-    const freeShippingThreshold = Math.max(
-      0,
-      Math.round(
-        req.body?.freeShippingThreshold !== undefined
-          ? Number(req.body.freeShippingThreshold)
-          : 5000,
-      ),
-    );
-    const estimatedDays =
-      String(req.body?.estimatedDays ?? '2–4 Working Days').trim() || '2–4 Working Days';
-    const active = req.body?.active === false ? 0 : 1;
+      const allRates = await getShippingRates(false);
+      broadcastToAdmins({
+        type: 'shipping:updated',
+        shippingRates: allRates,
+      });
 
-    db.prepare(
-      `INSERT INTO shipping_rates (
-        city_key, city_name, standard_fee, express_fee, free_shipping_threshold, estimated_days, active, updated_at_ms
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(city_key) DO UPDATE SET
-        city_name = excluded.city_name,
-        standard_fee = excluded.standard_fee,
-        express_fee = excluded.express_fee,
-        free_shipping_threshold = excluded.free_shipping_threshold,
-        estimated_days = excluded.estimated_days,
-        active = excluded.active,
-        updated_at_ms = excluded.updated_at_ms`,
-    ).run(
-      cityKey,
-      cityName,
-      standardFee,
-      expressFee,
-      freeShippingThreshold,
-      estimatedDays,
-      active,
-      Date.now(),
-    );
-
-    checkpointDatabase();
-    const shippingRates = getShippingRates(false);
-    broadcastToAdmins({ type: 'shipping:updated', shippingRates });
-    res.json({ ok: true, shippingRates });
-  });
+      res.json({ ok: true, shippingRates: allRates });
+    },
+  );
 
   app.delete(
     '/api/admin/shipping-rates/:cityKey',
     requireAdminAuth,
-    (req: Request, res: Response) => {
-      const cityKey = String(req.params.cityKey ?? '')
-        .trim()
-        .toLowerCase();
+    async (req: Request, res: Response) => {
+      const cityKey = String(req.params.cityKey ?? '').trim().toLowerCase();
       if (cityKey === '__default__') {
         res.status(400).json({
           ok: false,
-          error: 'The Nationwide fallback shipping rate cannot be deleted (you may edit its fee).',
+          error: 'The nationwide default shipping rate cannot be deleted.',
         });
         return;
       }
-      db.prepare('DELETE FROM shipping_rates WHERE city_key = ?').run(cityKey);
-      checkpointDatabase();
-      const shippingRates = getShippingRates(false);
-      broadcastToAdmins({ type: 'shipping:updated', shippingRates });
-      res.json({ ok: true, shippingRates });
+
+      await db.execute('DELETE FROM shipping_rates WHERE city_key = ?', [cityKey]);
+      const allRates = await getShippingRates(false);
+      broadcastToAdmins({
+        type: 'shipping:updated',
+        shippingRates: allRates,
+      });
+
+      res.json({ ok: true, shippingRates: allRates });
     },
   );
 
-  // Admin Discount & Coupon Management
-  app.post('/api/admin/coupons', requireAdminAuth, (req: Request, res: Response) => {
-    const code = String(req.body?.code ?? '')
-      .trim()
-      .toUpperCase()
-      .replace(/[^A-Z0-9_-]/g, '');
+  // Admin Coupons Management
+  app.post(
+    '/api/admin/coupons',
+    requireAdminAuth,
+    async (req: Request, res: Response) => {
+      const code = String(req.body?.code ?? '').trim().toUpperCase();
+      const discountType: DiscountType =
+        req.body?.discountType === 'fixed' ? 'fixed' : 'percentage';
+      const discountValue = Math.max(1, Math.round(Number(req.body?.discountValue) || 10));
+      const minOrderAmount = Math.max(0, Math.round(Number(req.body?.minOrderAmount) || 0));
+      const maxUses =
+        req.body?.maxUses !== null && req.body?.maxUses !== undefined
+          ? Math.max(1, Math.floor(Number(req.body.maxUses)))
+          : null;
+      const description = String(req.body?.description ?? '').trim();
+      const active = req.body?.active !== false ? 1 : 0;
+      const expiresAtIso =
+        typeof req.body?.expiresAt === 'string' && req.body.expiresAt.trim()
+          ? new Date(req.body.expiresAt).toISOString()
+          : null;
+      const nowMs = Date.now();
 
-    if (!code || code.length < 3) {
-      res.status(400).json({
-        ok: false,
-        error: 'Coupon code must be at least 3 alphanumeric characters (e.g. EID20).',
+      if (!code || code.length < 3) {
+        res.status(400).json({ ok: false, error: 'Coupon code must be at least 3 characters.' });
+        return;
+      }
+
+      await db.execute(
+        `INSERT INTO coupons (
+          code, discount_type, discount_value, min_order_amount, max_uses, used_count, description, active, expires_at_iso, created_at_ms
+        ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
+        ON CONFLICT(code) DO UPDATE SET
+          discount_type = EXCLUDED.discount_type,
+          discount_value = EXCLUDED.discount_value,
+          min_order_amount = EXCLUDED.min_order_amount,
+          max_uses = EXCLUDED.max_uses,
+          description = EXCLUDED.description,
+          active = EXCLUDED.active,
+          expires_at_iso = EXCLUDED.expires_at_iso`,
+        [
+          code,
+          discountType,
+          discountValue,
+          minOrderAmount,
+          maxUses,
+          description,
+          active,
+          expiresAtIso,
+          nowMs,
+        ],
+      );
+
+      const allCoupons = await getAllCoupons();
+      broadcastToAdmins({
+        type: 'coupons:updated',
+        coupons: allCoupons,
       });
-      return;
-    }
 
-    const discountType: DiscountType =
-      req.body?.discountType === 'fixed' ? 'fixed' : 'percentage';
-    const rawVal = Math.round(Number(req.body?.discountValue) || 0);
-    if (rawVal <= 0 || (discountType === 'percentage' && rawVal > 90)) {
-      res.status(400).json({
-        ok: false,
-        error:
-          discountType === 'percentage'
-            ? 'Percentage discount must be between 1% and 90%.'
-            : 'Fixed discount must be greater than PKR 0.',
+      res.json({ ok: true, coupons: allCoupons });
+    },
+  );
+
+  app.patch(
+    '/api/admin/coupons/:code',
+    requireAdminAuth,
+    async (req: Request, res: Response) => {
+      const code = String(req.params.code ?? '').trim().toUpperCase();
+      const existing = await db.queryOne<{ active: number }>(
+        'SELECT active FROM coupons WHERE code = ?',
+        [code],
+      );
+      if (!existing) {
+        res.status(404).json({ ok: false, error: 'Coupon not found.' });
+        return;
+      }
+
+      const nextActive =
+        req.body?.active !== undefined
+          ? req.body.active
+            ? 1
+            : 0
+          : Number(existing.active) === 1
+            ? 0
+            : 1;
+
+      await db.execute('UPDATE coupons SET active = ? WHERE code = ?', [nextActive, code]);
+      const allCoupons = await getAllCoupons();
+      broadcastToAdmins({
+        type: 'coupons:updated',
+        coupons: allCoupons,
       });
-      return;
-    }
 
-    const minOrderAmount = Math.max(0, Math.round(Number(req.body?.minOrderAmount) || 0));
-    const maxUses =
-      req.body?.maxUses === null || req.body?.maxUses === '' || req.body?.maxUses === undefined
-        ? null
-        : Math.max(1, Math.round(Number(req.body.maxUses)));
-    const description =
-      String(req.body?.description ?? '').trim() ||
-      (discountType === 'percentage'
-        ? `${rawVal}% Privilege Discount`
-        : `PKR ${rawVal.toLocaleString('en-PK')} Off`);
-    const active = req.body?.active === false ? 0 : 1;
-    const expiresAtIso =
-      typeof req.body?.expiresAtIso === 'string' && req.body.expiresAtIso.trim()
-        ? req.body.expiresAtIso.trim()
-        : null;
+      res.json({ ok: true, coupons: allCoupons });
+    },
+  );
 
-    db.prepare(
-      `INSERT INTO coupons (
-        code, discount_type, discount_value, min_order_amount, max_uses, used_count, description, active, expires_at_iso, created_at_ms
-      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
-      ON CONFLICT(code) DO UPDATE SET
-        discount_type = excluded.discount_type,
-        discount_value = excluded.discount_value,
-        min_order_amount = excluded.min_order_amount,
-        max_uses = excluded.max_uses,
-        description = excluded.description,
-        active = excluded.active,
-        expires_at_iso = excluded.expires_at_iso`,
-    ).run(
-      code,
-      discountType,
-      rawVal,
-      minOrderAmount,
-      maxUses,
-      description,
-      active,
-      expiresAtIso,
-      Date.now(),
-    );
+  app.delete(
+    '/api/admin/coupons/:code',
+    requireAdminAuth,
+    async (req: Request, res: Response) => {
+      const code = String(req.params.code ?? '').trim().toUpperCase();
+      await db.execute('DELETE FROM coupons WHERE code = ?', [code]);
+      const allCoupons = await getAllCoupons();
+      broadcastToAdmins({
+        type: 'coupons:updated',
+        coupons: allCoupons,
+      });
+      res.json({ ok: true, coupons: allCoupons });
+    },
+  );
 
-    checkpointDatabase();
-    const coupons = getAllCoupons();
-    broadcastToAdmins({ type: 'coupons:updated', coupons });
-    res.json({ ok: true, coupons });
-  });
+  app.delete(
+    '/api/admin/reviews/:reviewId',
+    requireAdminAuth,
+    async (req: Request, res: Response) => {
+      const reviewId = String(req.params.reviewId ?? '').trim();
+      await db.execute('DELETE FROM product_reviews WHERE id = ?', [reviewId]);
+      broadcastToAdmins({
+        type: 'reviews:updated',
+        reviewsByProduct: await getReviewsGroupedByProduct(),
+      });
+      res.json({ ok: true });
+    },
+  );
 
-  app.patch('/api/admin/coupons/:code', requireAdminAuth, (req: Request, res: Response) => {
-    const code = String(req.params.code ?? '')
-      .trim()
-      .toUpperCase();
-    const existing = db.prepare('SELECT active FROM coupons WHERE code = ?').get(code) as
-      | { active: number }
-      | undefined;
+  app.patch(
+    '/api/admin/inquiries/:id',
+    requireAdminAuth,
+    async (req: Request, res: Response) => {
+      const id = String(req.params.id ?? '').trim();
+      const existing = await db.queryOne<{ resolved: number }>(
+        'SELECT resolved FROM inquiries WHERE id = ?',
+        [id],
+      );
+      if (!existing) {
+        res.status(404).json({ ok: false, error: 'Inquiry not found.' });
+        return;
+      }
+      const nextResolved =
+        req.body?.resolved !== undefined
+          ? req.body.resolved
+            ? 1
+            : 0
+          : Number(existing.resolved) === 1
+            ? 0
+            : 1;
 
-    if (!existing) {
-      res.status(404).json({ ok: false, error: 'Coupon not found.' });
-      return;
-    }
+      await db.execute('UPDATE inquiries SET resolved = ? WHERE id = ?', [nextResolved, id]);
+      res.json({ ok: true, inquiries: await getAllInquiries() });
+    },
+  );
 
-    const nextActive =
-      typeof req.body?.active === 'boolean'
-        ? req.body.active
-          ? 1
-          : 0
-        : existing.active === 1
-          ? 0
-          : 1;
-
-    db.prepare('UPDATE coupons SET active = ? WHERE code = ?').run(nextActive, code);
-    checkpointDatabase();
-    const coupons = getAllCoupons();
-    broadcastToAdmins({ type: 'coupons:updated', coupons });
-    res.json({ ok: true, coupons });
-  });
-
-  app.delete('/api/admin/coupons/:code', requireAdminAuth, (req: Request, res: Response) => {
-    const code = String(req.params.code ?? '')
-      .trim()
-      .toUpperCase();
-    db.prepare('DELETE FROM coupons WHERE code = ?').run(code);
-    checkpointDatabase();
-    const coupons = getAllCoupons();
-    broadcastToAdmins({ type: 'coupons:updated', coupons });
-    res.json({ ok: true, coupons });
-  });
-
-  // Admin Review Moderation
-  app.delete('/api/admin/reviews/:reviewId', requireAdminAuth, (req: Request, res: Response) => {
-    const reviewId = String(req.params.reviewId ?? '').trim();
-    db.prepare('DELETE FROM product_reviews WHERE id = ?').run(reviewId);
-    checkpointDatabase();
-    const reviewsByProduct = getReviewsGroupedByProduct();
-    broadcastToAdmins({ type: 'reviews:updated', reviewsByProduct });
-    res.json({ ok: true, reviewsByProduct });
-  });
-
-  // Admin Inquiry Resolution
-  app.patch('/api/admin/inquiries/:id', requireAdminAuth, (req: Request, res: Response) => {
-    const id = String(req.params.id ?? '').trim();
-    const existing = db
-      .prepare('SELECT resolved FROM inquiries WHERE id = ?')
-      .get(id) as { resolved: number } | undefined;
-
-    if (!existing) {
-      res.status(404).json({ ok: false, error: 'Inquiry not found.' });
-      return;
-    }
-
-    const nextResolved =
-      typeof req.body?.resolved === 'boolean'
-        ? req.body.resolved
-          ? 1
-          : 0
-        : existing.resolved === 1
-          ? 0
-          : 1;
-
-    db.prepare('UPDATE inquiries SET resolved = ? WHERE id = ?').run(nextResolved, id);
-    checkpointDatabase();
-
-    res.json({ ok: true, id, resolved: nextResolved === 1 });
-  });
-
-  // Admin Secure Database Backups (SQLite VACUUM INTO + Authenticated Download)
+  // Admin Backups
   app.get('/api/admin/backups', requireAdminAuth, (_req: Request, res: Response) => {
-    res.json({
-      ok: true,
-      backups: listBackups(),
-    });
+    res.json({ ok: true, backups: listBackups() });
   });
 
-  app.post('/api/admin/backups', requireAdminAuth, (_req: Request, res: Response) => {
+  app.post('/api/admin/backups', requireAdminAuth, async (_req: Request, res: Response) => {
     try {
-      const created = createDatabaseBackup('admin');
-      res.status(201).json({
-        ok: true,
-        backup: created,
-        backups: listBackups(),
-      });
+      const backup = await createDatabaseBackup('manual');
+      res.json({ ok: true, backup, backups: listBackups() });
     } catch (err) {
-      console.error('Database backup error:', err);
-      res.status(500).json({
-        ok: false,
-        error: 'Failed to create database snapshot.',
-      });
+      console.error('[Backup Error]', err);
+      res.status(500).json({ ok: false, error: 'Failed to create database backup.' });
     }
-  });
-
-  app.get('/api/admin/backups/export-json', requireAdminAuth, (_req: Request, res: Response) => {
-    const payload = {
-      exportedAtIso: new Date().toISOString(),
-      orders: getAllAdminOrders(),
-      productOverrides: getProductOverridesMap(),
-      shippingRates: getShippingRates(false),
-      coupons: getAllCoupons(),
-      reviewsByProduct: getReviewsGroupedByProduct(),
-      inquiries: getAllInquiries(),
-      subscribers: getAllSubscribers(),
-    };
-    const stamp = new Date().toISOString().slice(0, 10);
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="norva_Backup_${stamp}.json"`,
-    );
-    res.send(JSON.stringify(payload, null, 2));
   });
 
   app.get(
-    '/api/admin/backups/:filename/download',
+    '/api/admin/backups/export-json',
     requireAdminAuth,
-    (req: Request, res: Response) => {
-      const safeName = path.basename(String(req.params.filename ?? ''));
-      if (!/^norva_backup_[0-9_A-Za-z-]+\.sqlite$/.test(safeName)) {
-        res.status(400).json({ ok: false, error: 'Invalid backup filename.' });
-        return;
+    async (_req: Request, res: Response) => {
+      try {
+        const fullDump = {
+          exportedAtIso: new Date().toISOString(),
+          databaseEngine: db.engine,
+          orders: await getAllAdminOrders(),
+          reviews: await getReviewsGroupedByProduct(),
+          shippingRates: await getShippingRates(false),
+          coupons: await getAllCoupons(),
+          inquiries: await getAllInquiries(),
+          subscribers: await getAllSubscribers(),
+          productOverrides: await getProductOverridesMap(),
+        };
+
+        const jsonStr = JSON.stringify(fullDump, null, 2);
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader(
+          'Content-Disposition',
+          `attachment; filename="norva_store_export_${new Date().toISOString().slice(0, 10)}.json"`,
+        );
+        res.send(jsonStr);
+      } catch (err) {
+        console.error('[Export Error]', err);
+        res.status(500).json({ ok: false, error: 'Export failed.' });
       }
-      const fullPath = path.join(backupsDir, safeName);
-      if (!fs.existsSync(fullPath)) {
-        res.status(404).json({ ok: false, error: 'Backup snapshot not found.' });
-        return;
-      }
-      res.download(fullPath, safeName);
     },
   );
 
-  // Catch-all for unknown /api routes
+  // 404 handler for unrecognized /api routes
   app.use('/api', (_req: Request, res: Response) => {
     res.status(404).json({ ok: false, error: 'API endpoint not found.' });
   });
 
   // Global Unhandled Error Middleware (prevents raw stack leakage)
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-    console.error('Unhandled server error:', err);
+    console.error('[Unhandled server error]:', err);
     if (res.headersSent) return;
     res.status(500).json({
       ok: false,
@@ -3566,8 +2864,20 @@ async function startServer(): Promise<void> {
     app.use(vite.middlewares);
   } else {
     const distPath = path.resolve(process.cwd(), 'dist');
-    app.use(express.static(distPath));
+    app.use(
+      '/assets',
+      express.static(path.join(distPath, 'assets'), {
+        immutable: true,
+        maxAge: '365d',
+      }),
+    );
+    app.use(
+      express.static(distPath, {
+        maxAge: '1h',
+      }),
+    );
     app.get('*', (_req: Request, res: Response) => {
+      res.setHeader('Cache-Control', 'no-cache');
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
@@ -3577,7 +2887,7 @@ async function startServer(): Promise<void> {
   // --------------------------------------------------------------------------
   const wss = new WebSocketServer({ noServer: true });
 
-  httpServer.on('upgrade', (request, socket, head) => {
+  httpServer.on('upgrade', async (request, socket, head) => {
     try {
       const host = request.headers.host || `localhost:${PORT}`;
       const parsedUrl = new URL(request.url || '/', `http://${host}`);
@@ -3588,7 +2898,7 @@ async function startServer(): Promise<void> {
 
       const queryToken = parsedUrl.searchParams.get('token') ?? undefined;
       const rawToken = extractRawAdminToken(request, queryToken);
-      const admin = verifyAdminToken(rawToken);
+      const admin = await verifyAdminToken(rawToken);
 
       if (!admin) {
         socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
@@ -3596,14 +2906,14 @@ async function startServer(): Promise<void> {
         return;
       }
 
-      wss.handleUpgrade(request, socket, head, (ws) => {
+      wss.handleUpgrade(request, socket, head, async (ws) => {
         adminWsClients.add(ws);
 
         ws.send(
           JSON.stringify({
             type: 'init',
-            orders: getAllAdminOrders(),
-            unseenCount: getUnseenOrderCount(),
+            orders: await getAllAdminOrders(),
+            unseenCount: await getUnseenOrderCount(),
           }),
         );
 
@@ -3622,16 +2932,18 @@ async function startServer(): Promise<void> {
 
   httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(
-      `NORVA server listening on http://0.0.0.0:${PORT} (SQLite: ${dbFilePath}${
-        isEphemeralFallback ? ' [EPHEMERAL TMP]' : ''
-      })`,
+      `NORVA server listening on http://0.0.0.0:${PORT} (${db.engine}: ${db.connectionInfo}, persistent: ${db.isPersistent})`,
     );
   });
 }
 
-if (!process.env.VERCEL) {
+const isServerlessEnv = Boolean(
+  process.env.VERCEL || process.env.VERCEL_ENV || process.env.AWS_LAMBDA_FUNCTION_NAME,
+);
+
+if (!isServerlessEnv) {
   startServer().catch((err) => {
-    console.error('Fatal server startup error:', err);
+    console.error('[Fatal server startup error]:', err);
     process.exit(1);
   });
 }

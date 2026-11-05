@@ -1,482 +1,451 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
-import { ChevronDown, Heart, Lock, Menu, Search, ShoppingBag, User, X } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
-import { useStore } from '../context/StoreContext';
+import {
+  Check,
+  Heart,
+  Menu,
+  Search,
+  ShieldCheck,
+  ShoppingBag,
+  Sparkles,
+  Truck,
+  User,
+  X,
+} from 'lucide-react';
+import {
+  useCatalogActions,
+  useHeaderCounts,
+  useOverlayState,
+} from '../context/StoreContext';
+import { WhatsAppIcon, getStoreWhatsAppChatUrl } from './WhatsAppFloatingButton';
 
-const COLLECTION_LINKS = [
-  { to: '/collections/signature', label: 'Signature Five' },
-  { to: '/collections/oud', label: 'Oud Collection' },
-  { to: '/collections/fresh', label: 'Fresh Collection' },
-  { to: '/collections/mens', label: 'Men’s Fragrances' },
-  { to: '/collections/womens', label: 'Women’s Fragrances' },
-  { to: '/collections/unisex', label: 'Unisex Fragrances' },
-];
-
-export const Navbar: React.FC = () => {
-  const { cartCount, wishlist, openCart, openSearch, adminSession, unseenOrderCount } = useStore();
-  const [collectionsOpen, setCollectionsOpen] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+export const Navbar: React.FC = React.memo(() => {
+  const { cartCount, wishlistCount, unseenOrderCount, hasAdminSession } = useHeaderCounts();
+  const { openCart, openSearch } = useOverlayState();
+  const [scrolled, setScrolled] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
 
-  React.useEffect(() => {
-    setCollectionsOpen(false);
-    setMobileMenuOpen(false);
+  useEffect(() => {
+    let ticking = false;
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(() => {
+        const nextScrolled = window.scrollY > 18;
+        setScrolled((prev) => (prev === nextScrolled ? prev : nextScrolled));
+        ticking = false;
+      });
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  useEffect(() => {
+    setMobileOpen(false);
   }, [location.pathname]);
 
-  React.useEffect(() => {
-    if (!mobileMenuOpen) return;
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMobileMenuOpen(false);
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.body.style.overflow = prevOverflow;
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [mobileMenuOpen]);
+  const navLinks = [
+    { label: 'Shop All', to: '/shop' },
+    { label: 'Best Sellers', to: '/collections/best-sellers' },
+    { label: 'Oud & Woods', to: '/collections/oud-dark-woods' },
+    { label: 'Track Order', to: '/track-order' },
+    { label: 'Contact', to: '/contact' },
+  ];
 
   return (
-    <header className="sticky top-0 z-40 w-full bg-[#050508]/97 border-b border-white/[0.08] shadow-[0_12px_36px_rgba(0,0,0,0.88)]">
-      {/* Strictly 3-Zone Top Bar Contract (Zero backdrop-blur over WebGL for silky 60fps scroll) */}
-      <div className="max-w-[1380px] mx-auto px-3.5 sm:px-8 h-14 sm:h-16 flex items-center justify-between gap-2 sm:gap-6 lg:gap-8">
-        {/* Zone 1: Single Brand Wordmark */}
-        <Link
-          to="/"
-          className="font-serif-display text-xl min-[375px]:text-2xl sm:text-[26px] font-medium tracking-[0.12em] sm:tracking-[0.14em] text-white whitespace-nowrap shrink-0"
-        >
-          NORVA
-        </Link>
+    <>
+      {/* Subtle Top Complimentary Announcement Bar */}
+      <div className="bg-[#0b0b11] border-b border-white/[0.06] text-[10.5px] sm:text-xs text-white/75 py-2 px-3 sm:px-4 text-center tracking-wide">
+        <span className="text-[#d6be96] font-medium">Complimentary Nationwide Delivery</span> on
+        orders above PKR 5,000 · Use code{' '}
+        <span className="font-mono-tabular text-[#f2e6d5] font-semibold">NORVA10</span> for 10% off
+      </div>
 
-        {/* Zone 2: Clean Single-Line Text Navigation Links */}
-        <nav className="hidden lg:flex items-center gap-8 text-[13px] font-medium text-white/68">
-          <NavLink
-            to="/shop"
-            className={({ isActive }) =>
-              `hover:text-white transition-colors whitespace-nowrap shrink-0 ${
-                isActive ? 'text-white underline underline-offset-8 decoration-[#d6be96]' : ''
-              }`
-            }
-          >
-            Shop All
-          </NavLink>
-
-          <div
-            className="relative"
-            onMouseEnter={() => setCollectionsOpen(true)}
-            onMouseLeave={() => setCollectionsOpen(false)}
-          >
+      <header
+        className={`sticky top-0 z-40 transition-colors duration-200 ${
+          scrolled
+            ? 'bg-[#050508]/95 border-b border-white/[0.08]'
+            : 'bg-[#050508]/90 border-b border-white/[0.04]'
+        }`}
+      >
+        <div className="max-w-[1380px] mx-auto px-3.5 sm:px-8 h-16 sm:h-20 flex items-center justify-between gap-2 sm:gap-4">
+          {/* Left: Mobile Drawer Trigger + Desktop Nav */}
+          <div className="flex items-center gap-6">
             <button
               type="button"
-              onClick={() => setCollectionsOpen((v) => !v)}
-              className="flex items-center gap-1 hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer py-2"
+              onClick={() => setMobileOpen(true)}
+              aria-label="Open navigation menu"
+              className="lg:hidden w-10 h-10 -ml-2 rounded-lg flex items-center justify-center text-white/80 hover:text-white cursor-pointer"
             >
-              <span>Collections</span>
-              <ChevronDown
-                className={`w-3.5 h-3.5 opacity-70 transition-transform duration-200 ${
-                  collectionsOpen ? 'rotate-180' : ''
-                }`}
-              />
+              <Menu className="w-5 h-5" />
             </button>
 
-            <AnimatePresence>
-              {collectionsOpen && (
-                <motion.div
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 4 }}
-                  transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
-                  className="absolute left-0 top-full pt-1 w-56 z-50 will-change-[opacity,transform]"
+            <nav aria-label="Main navigation" className="hidden lg:flex items-center gap-7">
+              {navLinks.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  className={({ isActive }) =>
+                    `text-[13px] tracking-[0.04em] transition-colors ${
+                      isActive
+                        ? 'text-[#f2e6d5] font-medium'
+                        : 'text-white/70 hover:text-white'
+                    }`
+                  }
                 >
-                  <div className="bg-[#0b0b11] border border-white/12 rounded-xl p-2 shadow-[0_24px_60px_rgba(0,0,0,0.95)] grid grid-cols-1 gap-0.5">
-                    {COLLECTION_LINKS.map((item) => (
-                      <Link
-                        key={item.to}
-                        to={item.to}
-                        className="px-3.5 py-2 rounded-lg text-xs text-white/75 hover:text-white hover:bg-white/[0.06] transition-colors whitespace-nowrap"
-                      >
-                        {item.label}
-                      </Link>
-                    ))}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                  {item.label}
+                </NavLink>
+              ))}
+            </nav>
           </div>
 
-          <NavLink
-            to="/collections/signature"
-            className={({ isActive }) =>
-              `hover:text-white transition-colors whitespace-nowrap shrink-0 ${
-                isActive ? 'text-white underline underline-offset-8 decoration-[#d6be96]' : ''
-              }`
-            }
-          >
-            Signature Five
-          </NavLink>
-
-          <NavLink
-            to="/track-order"
-            className={({ isActive }) =>
-              `hover:text-white transition-colors whitespace-nowrap shrink-0 ${
-                isActive ? 'text-white underline underline-offset-8 decoration-[#d6be96]' : ''
-              }`
-            }
-          >
-            Track Order
-          </NavLink>
-
-          <NavLink
-            to="/contact"
-            className={({ isActive }) =>
-              `hover:text-white transition-colors whitespace-nowrap shrink-0 ${
-                isActive ? 'text-white underline underline-offset-8 decoration-[#d6be96]' : ''
-              }`
-            }
-          >
-            Concierge
-          </NavLink>
-        </nav>
-
-        {/* Zone 3: Search, Account & Bag Action Cluster */}
-        <div className="flex items-center gap-1 sm:gap-4 shrink-0">
-          <button
-            type="button"
-            onClick={openSearch}
-            aria-label="Search signature fragrances"
-            className="w-10 h-10 sm:w-auto sm:h-auto sm:p-2 flex items-center justify-center text-white/75 hover:text-white transition-colors cursor-pointer"
-          >
-            <Search className="w-4 h-4" />
-          </button>
-
+          {/* Center: NORVA Wordmark */}
           <Link
-            to="/admin"
-            aria-label="Admin Console"
-            title="Admin Console"
-            className="inline-flex items-center justify-center gap-1.5 w-9 h-10 sm:w-auto sm:h-auto text-xs font-medium text-white/70 hover:text-[#d6be96] transition-colors whitespace-nowrap shrink-0 sm:px-1.5"
+            to="/"
+            className="flex flex-col items-center justify-center text-center group"
+            aria-label="NORVA Home"
           >
-            <Lock className="w-3.5 h-3.5 text-[#d6be96]" />
-            <span className="hidden sm:inline">Admin</span>
-            {adminSession && unseenOrderCount > 0 && (
-              <span className="font-mono-tabular text-[10px] px-1.5 py-0.5 rounded bg-[#36d67e] text-[#050508] font-bold">
-                {unseenOrderCount}
-              </span>
-            )}
+            <span className="font-serif-display text-2xl sm:text-[30px] font-medium tracking-[0.24em] text-white group-hover:text-[#f2e6d5] transition-colors leading-none">
+              NORVA
+            </span>
+            <span className="text-[9px] tracking-[0.32em] uppercase text-[#d6be96]/75 mt-1 hidden sm:block">
+              Haute Parfumerie
+            </span>
           </Link>
 
-          <Link
-            to="/account"
-            aria-label="Account and Wishlist"
-            className="hidden sm:flex items-center gap-1.5 p-2 text-white/75 hover:text-white transition-colors whitespace-nowrap shrink-0"
-          >
-            {wishlist.length > 0 ? (
-              <Heart className="w-4 h-4 text-[#d6be96] fill-[#d6be96]" />
-            ) : (
-              <User className="w-4 h-4" />
-            )}
-          </Link>
+          {/* Right: Search, Track Order, Wishlist, Admin, Cart */}
+          <div className="flex items-center justify-end gap-0.5 sm:gap-2">
+            <button
+              type="button"
+              onClick={openSearch}
+              aria-label="Search fragrances"
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center text-white/75 hover:text-white hover:bg-white/[0.05] transition-colors cursor-pointer"
+            >
+              <Search className="w-[18px] h-[18px]" />
+            </button>
 
-          <button
-            type="button"
-            onClick={openCart}
-            className="flex items-center gap-1.5 sm:gap-2 h-10 sm:h-auto px-2.5 sm:px-3.5 py-2 rounded-lg bg-[#101018] hover:bg-[#d6be96] border border-[#d6be96]/25 text-white hover:text-[#050508] text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 shadow-[0_8px_24px_rgba(0,0,0,0.6)]"
-          >
-            <ShoppingBag className="w-3.5 h-3.5 shrink-0" />
-            <span className="hidden min-[360px]:inline">Bag</span>
-            <span className="font-mono-tabular">({cartCount})</span>
-          </button>
+            <Link
+              to="/track-order"
+              aria-label="Track your order"
+              title="Track Your Order"
+              className="hidden sm:flex w-10 h-10 rounded-lg items-center justify-center text-white/75 hover:text-white hover:bg-white/[0.05] transition-colors"
+            >
+              <Truck className="w-[18px] h-[18px]" />
+            </Link>
 
-          <button
-            type="button"
-            onClick={() => setMobileMenuOpen((v) => !v)}
-            aria-expanded={mobileMenuOpen}
-            aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
-            className="lg:hidden w-10 h-10 flex items-center justify-center rounded-lg text-white/85 hover:text-white hover:bg-white/[0.05] cursor-pointer"
-          >
-            {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-          </button>
+            <Link
+              to="/account"
+              aria-label="Account and wishlist"
+              className="relative w-9 h-9 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center text-white/75 hover:text-white hover:bg-white/[0.05] transition-colors"
+            >
+              <Heart className="w-[18px] h-[18px]" />
+              {wishlistCount > 0 && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#d6be96]" />
+              )}
+            </Link>
+
+            <Link
+              to="/admin"
+              aria-label="Store Admin Dashboard"
+              title={
+                hasAdminSession && unseenOrderCount > 0
+                  ? `Admin Dashboard (${unseenOrderCount} new order${unseenOrderCount === 1 ? '' : 's'})`
+                  : 'Admin Dashboard'
+              }
+              className="hidden md:flex relative h-9 px-3 rounded-lg items-center gap-1.5 text-xs text-white/60 hover:text-white hover:bg-white/[0.05] border border-transparent hover:border-white/10 transition-colors"
+            >
+              <User className="w-3.5 h-3.5 text-[#d6be96]" />
+              <span>Admin</span>
+              {hasAdminSession && unseenOrderCount > 0 && (
+                <span className="font-mono-tabular text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[#36d67e] text-[#050508] leading-none">
+                  {unseenOrderCount}
+                </span>
+              )}
+            </Link>
+
+            <button
+              type="button"
+              onClick={openCart}
+              aria-label={`Shopping bag with ${cartCount} items`}
+              className="relative h-9 sm:h-10 px-2.5 sm:px-3.5 rounded-lg flex items-center gap-1.5 sm:gap-2 bg-white/[0.06] hover:bg-white/[0.11] border border-white/10 text-white transition-colors cursor-pointer"
+            >
+              <ShoppingBag className="w-4 h-4 text-[#d6be96]" />
+              <span className="font-mono-tabular text-xs font-medium">{cartCount}</span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Mobile Navigation Drawer */}
+      {mobileOpen && (
+        <>
+          <div
+            onClick={() => setMobileOpen(false)}
+            className="fixed inset-0 z-50 bg-black/75 lg:hidden"
+          />
+          <aside className="fixed inset-y-0 left-0 z-50 w-[86vw] max-w-xs bg-[#09090e] border-r border-white/10 p-6 flex flex-col justify-between lg:hidden norva-fade-in">
+            <div className="space-y-8">
+              <div className="flex items-center justify-between">
+                <span className="font-serif-display text-2xl tracking-[0.22em] text-white">
+                  NORVA
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setMobileOpen(false)}
+                  aria-label="Close navigation menu"
+                  className="w-9 h-9 rounded-lg flex items-center justify-center text-white/70 hover:text-white bg-white/[0.05]"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <nav className="flex flex-col space-y-1">
+                {navLinks.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    className={({ isActive }) =>
+                      `px-3 py-3 rounded-lg text-sm tracking-wide transition-colors ${
+                        isActive
+                          ? 'bg-white/[0.07] text-[#f2e6d5] font-medium'
+                          : 'text-white/75 hover:bg-white/[0.04] hover:text-white'
+                      }`
+                    }
+                  >
+                    {item.label}
+                  </NavLink>
+                ))}
+                <NavLink
+                  to="/collections/fresh-luminous"
+                  className="px-3 py-3 rounded-lg text-sm tracking-wide text-white/75 hover:bg-white/[0.04] hover:text-white"
+                >
+                  Fresh &amp; Luminous
+                </NavLink>
+                <NavLink
+                  to="/account"
+                  className="px-3 py-3 rounded-lg text-sm tracking-wide text-white/75 hover:bg-white/[0.04] hover:text-white"
+                >
+                  My Account &amp; Wishlist
+                </NavLink>
+                <NavLink
+                  to="/admin"
+                  className="px-3 py-3 rounded-lg text-sm tracking-wide text-[#d6be96] hover:bg-white/[0.04] flex items-center justify-between"
+                >
+                  <span>Admin Dashboard</span>
+                  {hasAdminSession && unseenOrderCount > 0 && (
+                    <span className="font-mono-tabular text-[11px] font-semibold px-2 py-0.5 rounded bg-[#36d67e] text-[#050508]">
+                      {unseenOrderCount} New
+                    </span>
+                  )}
+                </NavLink>
+              </nav>
+            </div>
+
+            <div className="pt-6 border-t border-white/10 space-y-2 text-xs text-white/50">
+              <p>Small-Batch Extrait de Parfum</p>
+              <p className="text-white/35">Crafted with Grasse Botanicals</p>
+            </div>
+          </aside>
+        </>
+      )}
+    </>
+  );
+});
+Navbar.displayName = 'Navbar';
+
+export const Footer: React.FC = React.memo(() => {
+  const { addSubscriber } = useCatalogActions();
+  const [email, setEmail] = useState('');
+  const [joined, setJoined] = useState(false);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim() || !email.includes('@')) return;
+    addSubscriber(email);
+    setEmail('');
+    setJoined(true);
+  };
+
+  return (
+    <footer className="bg-[#06060a] border-t border-white/[0.08] text-white/75 cv-auto">
+      {/* Upper Assurance Strip */}
+      <div className="max-w-[1380px] mx-auto px-4 sm:px-8 py-8 sm:py-10 border-b border-white/[0.06] grid grid-cols-1 sm:grid-cols-3 gap-6">
+        <div className="flex items-start gap-3.5">
+          <div className="w-10 h-10 rounded-lg bg-white/[0.04] border border-white/10 flex items-center justify-center text-[#d6be96] shrink-0">
+            <Sparkles className="w-4 h-4" />
+          </div>
+          <div>
+            <h3 className="text-sm font-medium text-white">24% – 32% Pure Perfume Oil</h3>
+            <p className="text-xs text-white/50 mt-0.5 leading-relaxed">
+              True Extrait &amp; Intense concentrations aged in dark glass vats for 10–14 hour
+              longevity.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-start gap-3.5">
+          <div className="w-10 h-10 rounded-lg bg-white/[0.04] border border-white/10 flex items-center justify-center text-[#d6be96] shrink-0">
+            <Truck className="w-4 h-4" />
+          </div>
+          <div>
+            <h3 className="text-sm font-medium text-white">Insured Express Dispatch</h3>
+            <p className="text-xs text-white/50 mt-0.5 leading-relaxed">
+              Temperature-shielded luxury packaging with city-based courier rates &amp; live order
+              tracking.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-start gap-3.5">
+          <div className="w-10 h-10 rounded-lg bg-white/[0.04] border border-white/10 flex items-center justify-center text-[#d6be96] shrink-0">
+            <ShieldCheck className="w-4 h-4" />
+          </div>
+          <div>
+            <h3 className="text-sm font-medium text-white">IFRA Certified &amp; Cruelty-Free</h3>
+            <p className="text-xs text-white/50 mt-0.5 leading-relaxed">
+              Formulated without phthalates, parabens, or synthetic dyes. Ethically harvested
+              woods.
+            </p>
+          </div>
         </div>
       </div>
 
-      {/* Responsive Mobile Navigation Drawer */}
-      <AnimatePresence>
-        {mobileMenuOpen && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.16 }}
-              onClick={() => setMobileMenuOpen(false)}
-              className="lg:hidden fixed inset-x-0 top-14 sm:top-16 bottom-0 bg-black/75 z-30"
-            />
-            <motion.div
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-              className="lg:hidden relative z-40 bg-[#08080c] border-t border-white/10 px-4 sm:px-6 py-5 space-y-5 max-h-[calc(100dvh-3.5rem)] overflow-y-auto pb-safe shadow-[0_24px_60px_rgba(0,0,0,0.95)] will-change-[opacity,transform]"
-            >
-              <nav className="flex flex-col divide-y divide-white/[0.06] text-sm font-medium text-white/90">
-                <Link
-                  to="/"
-                  className="min-h-[44px] flex items-center justify-between hover:text-[#d6be96] transition-colors"
-                >
-                  <span>Home</span>
-                  <span className="text-white/35 text-xs">→</span>
-                </Link>
-                <Link
-                  to="/shop"
-                  className="min-h-[44px] flex items-center justify-between hover:text-[#d6be96] transition-colors"
-                >
-                  <span>Shop All Fragrances</span>
-                  <span className="font-mono-tabular text-[11px] text-[#d6be96]">50ml · PKR 2,500</span>
-                </Link>
-                <Link
-                  to="/collections/signature"
-                  className="min-h-[44px] flex items-center justify-between hover:text-[#d6be96] transition-colors"
-                >
-                  <span>The Signature Five</span>
-                  <span className="text-white/35 text-xs">→</span>
-                </Link>
-                <Link
-                  to="/track-order"
-                  className="min-h-[44px] flex items-center justify-between hover:text-[#d6be96] transition-colors"
-                >
-                  <span>Track Your Order</span>
-                  <span className="text-white/35 text-xs">NV-#</span>
-                </Link>
-                <Link
-                  to="/contact"
-                  className="min-h-[44px] flex items-center justify-between hover:text-[#d6be96] transition-colors"
-                >
-                  <span>Client Concierge</span>
-                  <span className="text-white/35 text-xs">→</span>
-                </Link>
-                <Link
-                  to="/account"
-                  className="min-h-[44px] flex items-center justify-between hover:text-[#d6be96] transition-colors"
-                >
-                  <span>Account &amp; Wishlist</span>
-                  <span className="font-mono-tabular text-xs text-white/50">({wishlist.length})</span>
-                </Link>
-                <Link
-                  to="/admin"
-                  className="min-h-[44px] flex items-center justify-between text-[#d6be96]"
-                >
-                  <span>Admin Dashboard</span>
-                  {adminSession && unseenOrderCount > 0 ? (
-                    <span className="font-mono-tabular text-[11px] px-2 py-0.5 rounded bg-[#36d67e] text-[#050508] font-bold">
-                      {unseenOrderCount} New
-                    </span>
-                  ) : (
-                    <span className="text-xs">→</span>
-                  )}
-                </Link>
-              </nav>
-
-              <div className="pt-1">
-                <p className="text-[11px] uppercase tracking-[0.16em] text-white/40 mb-2.5">
-                  Curated Collections
-                </p>
-                <div className="grid grid-cols-2 gap-2 text-xs text-white/80">
-                  {COLLECTION_LINKS.map((item) => (
-                    <Link
-                      key={item.to}
-                      to={item.to}
-                      className="min-h-[40px] px-3 rounded-lg bg-[#0d0d14] border border-white/[0.08] flex items-center hover:text-white hover:border-[#d6be96]/40 transition-colors"
-                    >
-                      <span className="truncate">{item.label}</span>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-    </header>
-  );
-};
-
-export const Footer: React.FC = () => {
-  return (
-    <footer className="relative bg-[#030305] border-t border-white/[0.08] text-white/65 overflow-hidden">
-      {/* Subtle perfumed ambient glow along footer horizon */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-[radial-gradient(ellipse_60%_100%_at_50%_0%,rgba(214,190,150,0.07),transparent_75%)]"
-      />
-
-      <div className="relative max-w-[1380px] mx-auto px-4 sm:px-8 py-12 sm:py-16 lg:py-20">
-        <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-5 gap-8 sm:gap-10 lg:gap-8">
-          {/* Brand Column */}
-          <div className="col-span-2 lg:col-span-2 space-y-3.5 sm:space-y-4 sm:pr-4">
-            <Link
-              to="/"
-              className="inline-block font-serif-display text-2xl tracking-[0.14em] text-white"
-            >
+      {/* Main Footer Columns */}
+      <div className="max-w-[1380px] mx-auto px-4 sm:px-8 py-12 sm:py-16 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-8 sm:gap-10">
+        <div className="lg:col-span-4 space-y-4">
+          <Link to="/" className="inline-block">
+            <span className="font-serif-display text-3xl tracking-[0.24em] text-white">
               NORVA
-            </Link>
-            <p className="text-xs sm:text-sm text-white/55 max-w-sm leading-relaxed">
-              Five signature 50ml haute parfumerie creations bottled in thick smoked optical crystal.
-              Every flacon honors rare botanical resins, noble woods, and enduring sillage.
-            </p>
-            <p className="text-xs text-white/40 pt-1 sm:pt-2">
-              NORVA Haute Parfumerie · Nationwide Insured Delivery Across Pakistan
-            </p>
-          </div>
-
-          {/* Signature Five */}
-          <div className="space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-white/85">
-              Signature Five
-            </h3>
-            <ul className="space-y-2.5 text-xs">
-              <li>
-                <Link to="/product/khamrah-qawa" className="hover:text-white transition-colors">
-                  01. Khamrah Qawa
-                </Link>
-              </li>
-              <li>
-                <Link to="/product/cool-water" className="hover:text-white transition-colors">
-                  02. Cool Water
-                </Link>
-              </li>
-              <li>
-                <Link to="/product/9mm-rebel" className="hover:text-white transition-colors">
-                  03. 9mM Rebel
-                </Link>
-              </li>
-              <li>
-                <Link to="/product/jadora" className="hover:text-white transition-colors">
-                  04. Jadora
-                </Link>
-              </li>
-              <li>
-                <Link to="/product/gucci-flora" className="hover:text-white transition-colors">
-                  05. Gucci Flora
-                </Link>
-              </li>
-            </ul>
-          </div>
-
-          {/* Collections */}
-          <div className="space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-white/85">
-              Collections
-            </h3>
-            <ul className="space-y-2.5 text-xs">
-              <li>
-                <Link to="/collections/signature" className="hover:text-white transition-colors">
-                  The Signature Five
-                </Link>
-              </li>
-              <li>
-                <Link to="/collections/mens" className="hover:text-white transition-colors">
-                  Men’s Fragrances
-                </Link>
-              </li>
-              <li>
-                <Link to="/collections/womens" className="hover:text-white transition-colors">
-                  Women’s Fragrances
-                </Link>
-              </li>
-              <li>
-                <Link to="/collections/unisex" className="hover:text-white transition-colors">
-                  Unisex Wardrobe
-                </Link>
-              </li>
-              <li>
-                <Link to="/collections/oud" className="hover:text-white transition-colors">
-                  The Oud Collection
-                </Link>
-              </li>
-              <li>
-                <Link to="/collections/fresh" className="hover:text-white transition-colors">
-                  The Fresh Collection
-                </Link>
-              </li>
-            </ul>
-          </div>
-
-          {/* Client Concierge */}
-          <div className="col-span-2 md:col-span-1 space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-white/85">
-              Client Concierge
-            </h3>
-            <ul className="space-y-2.5 text-xs">
-              <li>
-                <Link to="/shop" className="hover:text-white transition-colors">
-                  Shop All Fragrances
-                </Link>
-              </li>
-              <li>
-                <Link to="/track-order" className="hover:text-white transition-colors">
-                  Track Your Order
-                </Link>
-              </li>
-              <li>
-                <Link to="/account" className="hover:text-white transition-colors">
-                  Client Account &amp; Orders
-                </Link>
-              </li>
-              <li>
-                <Link to="/contact" className="hover:text-white transition-colors">
-                  Contact &amp; Consultations
-                </Link>
-              </li>
-              <li>
-                <Link to="/checkout" className="hover:text-white transition-colors">
-                  Cash on Delivery Checkout
-                </Link>
-              </li>
-              <li>
-                <a
-                  href="https://wa.me/923012697458?text=Assalam%20o%20Alaikum%20NORVA!%20I%20would%20like%20to%20place%20an%20order."
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-[#36d67e] hover:text-white transition-colors font-mono-tabular"
-                >
-                  WhatsApp: 0301-2697458
-                </a>
-              </li>
-              <li>
-                <Link to="/admin" className="text-[#d6be96] hover:text-white transition-colors">
-                  Admin Dashboard
-                </Link>
-              </li>
-            </ul>
+            </span>
+          </Link>
+          <p className="text-sm text-white/55 leading-relaxed max-w-sm">
+            Contemporary haute parfumerie uniting rare resinous oud, Florentine iris, and crisp
+            botanical absolutes inside weighted architectural flacons.
+          </p>
+          <p className="text-xs text-[#d6be96]/80 tracking-wider uppercase pt-1">
+            Grasse · Lahore · Dubai
+          </p>
+          <div className="pt-1">
+            <a
+              href={getStoreWhatsAppChatUrl()}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#25D366]/14 hover:bg-[#25D366]/24 border border-[#25D366]/35 text-xs font-medium text-[#36d67e] transition-colors"
+            >
+              <WhatsAppIcon className="w-4 h-4 text-[#25D366]" />
+              <span>Chat on WhatsApp · +92 310 7019192</span>
+            </a>
           </div>
         </div>
 
-        <div className="mt-10 sm:mt-14 pt-6 sm:pt-8 pb-16 sm:pb-0 border-t border-white/[0.06] flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-white/40 text-center sm:text-left">
+        <div className="lg:col-span-2 space-y-3">
+          <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-white">
+            Collections
+          </h4>
+          <ul className="space-y-2.5 text-sm text-white/60">
+            <li>
+              <Link to="/shop" className="hover:text-white transition-colors">
+                All Fragrances
+              </Link>
+            </li>
+            <li>
+              <Link to="/collections/best-sellers" className="hover:text-white transition-colors">
+                House Icons
+              </Link>
+            </li>
+            <li>
+              <Link to="/collections/oud-dark-woods" className="hover:text-white transition-colors">
+                Oud &amp; Dark Woods
+              </Link>
+            </li>
+            <li>
+              <Link to="/collections/fresh-luminous" className="hover:text-white transition-colors">
+                Fresh &amp; Luminous
+              </Link>
+            </li>
+          </ul>
+        </div>
+
+        <div className="lg:col-span-2 space-y-3">
+          <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-white">
+            Client Care
+          </h4>
+          <ul className="space-y-2.5 text-sm text-white/60">
+            <li>
+              <Link to="/track-order" className="hover:text-white transition-colors text-[#d6be96]">
+                Track Your Order
+              </Link>
+            </li>
+            <li>
+              <Link to="/contact" className="hover:text-white transition-colors">
+                Contact &amp; Concierge
+              </Link>
+            </li>
+            <li>
+              <Link to="/account" className="hover:text-white transition-colors">
+                Orders &amp; Wishlist
+              </Link>
+            </li>
+            <li>
+              <Link to="/checkout" className="hover:text-white transition-colors">
+                Shipping &amp; Checkout
+              </Link>
+            </li>
+            <li>
+              <Link to="/admin" className="hover:text-white transition-colors">
+                Store Admin Console
+              </Link>
+            </li>
+          </ul>
+        </div>
+
+        <div className="lg:col-span-4 space-y-3">
+          <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-white">
+            Private Dispatch List
+          </h4>
+          <p className="text-xs text-white/55 leading-relaxed">
+            Receive early access to numbered micro-batch Extraits and private seasonal releases.
+          </p>
+          <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-2 pt-1">
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Enter your email address"
+              aria-label="Email address for private dispatch list"
+              className="flex-1 h-11 px-3.5 rounded-lg bg-white/[0.04] border border-white/12 text-sm text-white placeholder:text-white/35 focus:outline-none focus:border-[#d6be96]"
+            />
+            <button
+              type="submit"
+              className="h-11 px-5 rounded-lg bg-[#f2e6d5] hover:bg-[#d6be96] text-[#050508] text-xs font-semibold tracking-wider uppercase transition-colors cursor-pointer shrink-0"
+            >
+              {joined ? <Check className="w-4 h-4 mx-auto" /> : 'Join'}
+            </button>
+          </form>
+        </div>
+      </div>
+
+      {/* Bottom Copyright */}
+      <div className="border-t border-white/[0.06] py-6 px-4 sm:px-8">
+        <div className="max-w-[1380px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-white/40">
           <p>© {new Date().getFullYear()} NORVA Haute Parfumerie. All rights reserved.</p>
-          <div className="flex flex-wrap items-center justify-center gap-5 sm:gap-6">
-            <a
-              href="https://instagram.com"
-              target="_blank"
-              rel="noreferrer"
-              className="py-1 hover:text-white transition-colors"
-            >
-              Instagram
-            </a>
-            <a
-              href="https://pinterest.com"
-              target="_blank"
-              rel="noreferrer"
-              className="py-1 hover:text-white transition-colors"
-            >
-              Pinterest
-            </a>
-            <Link to="/contact" className="py-1 hover:text-white transition-colors">
-              Shipping &amp; Returns
+          <div className="flex items-center gap-5">
+            <Link to="/track-order" className="hover:text-white/70 transition-colors">
+              Order Tracking
+            </Link>
+            <Link to="/contact" className="hover:text-white/70 transition-colors">
+              Privacy &amp; Terms
+            </Link>
+            <Link to="/contact" className="hover:text-white/70 transition-colors">
+              Authenticity Guarantee
             </Link>
           </div>
         </div>
       </div>
     </footer>
   );
-};
+});
+Footer.displayName = 'Footer';

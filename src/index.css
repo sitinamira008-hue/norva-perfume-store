@@ -1,248 +1,157 @@
 @import "tailwindcss";
-@custom-variant dark (&:where(.dark, .dark *));
-
-:root {
-  --ease-luxury: cubic-bezier(0.22, 1, 0.36, 1);
-}
 
 @layer base {
+  :root {
+    --bg-obsidian: #050508;
+    --bg-elevated: #0b0b10;
+    --bg-card: #0e0e15;
+    --gold-champagne: #d6be96;
+    --gold-soft: #f2e6d5;
+    --violet-bloom: #8e78ff;
+    --emerald-aura: #23b98e;
+    --amber-resin: #e39b4b;
+    --ease-luxury: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
   html {
     background-color: #050508;
     color: #f5f3ef;
-    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-    scroll-behavior: smooth;
-    max-width: 100%;
-    overflow-x: clip;
-    -webkit-tap-highlight-color: transparent;
-    text-rendering: optimizeLegibility;
+    font-family: 'Plus Jakarta Sans', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    text-rendering: auto;
+    overflow-x: hidden;
   }
 
   body {
     margin: 0;
-    padding: 0;
     background-color: #050508;
+    background-image: radial-gradient(circle at 50% 0%, rgba(214, 190, 150, 0.055), transparent 55%);
+    background-repeat: no-repeat;
     color: #f5f3ef;
-    max-width: 100%;
-    overflow-x: clip;
-    min-height: 100vh;
-    overscroll-behavior-y: none;
-  }
-
-  #root {
-    max-width: 100%;
-    overflow-x: clip;
-  }
-
-  /* GPU-composited fixed obsidian-black & perfumed mist ambient backdrop — zero repaint during scroll */
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    z-index: -1;
-    pointer-events: none;
-    background:
-      radial-gradient(ellipse 68% 48% at 72% 18%, rgba(214, 190, 150, 0.075) 0%, transparent 68%),
-      radial-gradient(ellipse 58% 45% at 18% 62%, rgba(124, 88, 214, 0.05) 0%, transparent 70%),
-      radial-gradient(ellipse 90% 70% at 50% 0%, #0d0d14 0%, #060609 58%, #030305 100%);
-    transform: translate3d(0, 0, 0);
-    will-change: transform;
-  }
-
-  a,
-  button,
-  input,
-  select,
-  textarea {
-    touch-action: manipulation;
-  }
-
-  /* Prevent iOS Safari auto-zoom on form focus while preserving exact desktop font sizes */
-  @media (max-width: 639px) {
-    input:not([type='range']):not([type='checkbox']):not([type='radio']),
-    select,
-    textarea {
-      font-size: 16px;
-    }
+    overflow-x: hidden;
+    position: relative;
   }
 
   ::selection {
-    background-color: rgba(214, 190, 150, 0.32);
+    background: rgba(214, 190, 150, 0.28);
     color: #ffffff;
   }
 }
 
+.font-serif-display {
+  font-family: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
+  letter-spacing: -0.015em;
+  text-rendering: optimizeLegibility;
+}
+
+.font-mono-tabular {
+  font-family: Consolas, 'SFMono-Regular', Menlo, Monaco, 'Liberation Mono', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Crisp obsidian-and-gold card surface — lightweight single shadow */
+.luxury-card {
+  background-color: #0a0a0f;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition:
+    border-color 0.25s ease,
+    background-color 0.25s ease;
+}
+
+.luxury-card:hover {
+  border-color: rgba(214, 190, 150, 0.32);
+  background-color: #0d0d14;
+}
+
+/* Lightweight GPU-composited entrance utility */
+@keyframes norvaFadeIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.norva-fade-in {
+  animation: norvaFadeIn 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Content visibility optimization for below-the-fold sections */
+.cv-auto {
+  content-visibility: auto;
+  contain-intrinsic-size: 1px 620px;
+}
+
+/* Hide scrollbars cleanly where horizontal strips are used */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
-}
 
-.pb-safe {
-  padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
-}
-
-.font-serif-display {
-  font-family: 'Cormorant Garamond', Georgia, serif;
-}
-
-.font-sans-body {
-  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-}
-
-.font-mono-tabular {
-  font-family: 'JetBrains Mono', monospace;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Defer layout & paint for below-the-fold sections until scrolled near */
-.cv-auto {
-  content-visibility: auto;
-  contain-intrinsic-size: 1px 640px;
-}
-
-/* Smooth GPU-accelerated interactive surface lift with perfumed aura transition */
-.smooth-lift {
-  transition:
-    transform 220ms var(--ease-luxury),
-    border-color 200ms var(--ease-luxury),
-    box-shadow 240ms var(--ease-luxury),
-    background-color 200ms var(--ease-luxury),
-    opacity 200ms var(--ease-luxury);
-  transform: translate3d(0, 0, 0);
-}
-
-/* Scent-matched perfumed drop shadows (GPU-composited box-shadows on pure black canvas) */
-.perfume-shadow-amber {
-  box-shadow:
-    0 20px 48px -12px rgba(0, 0, 0, 0.92),
-    0 14px 36px -14px rgba(235, 138, 38, 0.24),
-    0 0 1px 0 rgba(214, 190, 150, 0.16);
-}
-.perfume-shadow-amber:hover {
-  box-shadow:
-    0 26px 56px -10px rgba(0, 0, 0, 0.95),
-    0 18px 46px -10px rgba(242, 152, 48, 0.42),
-    0 0 28px -6px rgba(214, 146, 58, 0.22);
-}
-
-.perfume-shadow-cobalt {
-  box-shadow:
-    0 20px 48px -12px rgba(0, 0, 0, 0.92),
-    0 14px 36px -14px rgba(38, 158, 224, 0.24),
-    0 0 1px 0 rgba(120, 214, 235, 0.16);
-}
-.perfume-shadow-cobalt:hover {
-  box-shadow:
-    0 26px 56px -10px rgba(0, 0, 0, 0.95),
-    0 18px 46px -10px rgba(48, 178, 238, 0.42),
-    0 0 28px -6px rgba(82, 214, 196, 0.24);
-}
-
-.perfume-shadow-noir {
-  box-shadow:
-    0 20px 48px -12px rgba(0, 0, 0, 0.92),
-    0 14px 36px -14px rgba(148, 164, 206, 0.22),
-    0 0 1px 0 rgba(205, 214, 236, 0.16);
-}
-.perfume-shadow-noir:hover {
-  box-shadow:
-    0 26px 56px -10px rgba(0, 0, 0, 0.95),
-    0 18px 46px -10px rgba(172, 188, 232, 0.36),
-    0 0 28px -6px rgba(138, 156, 208, 0.22);
-}
-
-.perfume-shadow-champagne {
-  box-shadow:
-    0 20px 48px -12px rgba(0, 0, 0, 0.92),
-    0 14px 36px -14px rgba(245, 182, 56, 0.25),
-    0 0 1px 0 rgba(238, 202, 128, 0.18);
-}
-.perfume-shadow-champagne:hover {
-  box-shadow:
-    0 26px 56px -10px rgba(0, 0, 0, 0.95),
-    0 18px 46px -10px rgba(252, 194, 68, 0.44),
-    0 0 28px -6px rgba(235, 174, 62, 0.24);
-}
-
-.perfume-shadow-obsidian {
-  box-shadow:
-    0 20px 48px -12px rgba(0, 0, 0, 0.92),
-    0 14px 36px -14px rgba(176, 108, 248, 0.25),
-    0 0 1px 0 rgba(208, 168, 255, 0.16);
-}
-.perfume-shadow-obsidian:hover {
-  box-shadow:
-    0 26px 56px -10px rgba(0, 0, 0, 0.95),
-    0 18px 46px -10px rgba(190, 126, 255, 0.44),
-    0 0 28px -6px rgba(156, 92, 238, 0.24);
-}
-
-.perfume-ambient-panel {
-  box-shadow:
-    0 24px 60px -16px rgba(0, 0, 0, 0.94),
-    0 12px 36px -14px rgba(214, 190, 150, 0.14);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
-  }
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-}
-
-/* Custom subtle range input for Price Filters */
-input[type='range'].facet-slider,
-input[type='range'] {
-  -webkit-appearance: none;
-  appearance: none;
-  height: 3px;
-  background: rgba(255, 255, 255, 0.14);
-  border-radius: 999px;
-  outline: none;
-}
-
-input[type='range']::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #d6be96;
-  cursor: pointer;
-  border: 1px solid rgba(0, 0, 0, 0.7);
-  transition: transform 150ms cubic-bezier(0.16, 1, 0.3, 1), background-color 150ms ease;
-}
-
-input[type='range']::-webkit-slider-thumb:hover {
-  transform: scale(1.18);
-  background: #f2e6d5;
-}
-
-/* Subtle obsidian luxury scrollbar */
+/* Custom sleek dark scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #040407;
+  background: #050508;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(214, 190, 150, 0.22);
-  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(214, 190, 150, 0.48);
+  background: rgba(214, 190, 150, 0.42);
+}
+
+/* ==========================================================================
+   WINDOWS 7 / LOW-SPEC PC PERFORMANCE MODE (`html[data-perf="low"]`)
+   Preserves NORVA's obsidian & champagne-gold luxury palette while removing
+   expensive gradients, shadows, hover scale repaints, and animations.
+   ========================================================================== */
+html[data-perf='low'],
+html[data-perf='low'] body {
+  scroll-behavior: auto !important;
+  background-image: none !important;
+}
+
+html[data-perf='low'] *,
+html[data-perf='low'] *::before,
+html[data-perf='low'] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-perf='low'] .shadow-2xl,
+html[data-perf='low'] .shadow-xl,
+html[data-perf='low'] .shadow-lg {
+  box-shadow: none !important;
+}
+
+html[data-perf='low'] img {
+  transform: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -1,9 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Check, ShoppingBag, Sparkles, Star } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
 import { formatPKR } from '../data/products';
-import { useStore } from '../context/StoreContext';
+import { useCatalogActions, useOverlayState, useStore } from '../context/StoreContext';
 import { ThreeBottleStage } from '../components/ThreeBottleStage';
 import {
   LuxuryImage,
@@ -12,23 +11,16 @@ import {
   ProductCard,
   SEOHead,
 } from '../components/LuxuryUI';
-import { EssencePresetId } from '../webgl/FacetBottleScene';
+import type { EssencePresetId } from '../webgl/bottleTypes';
 
 const HERO_PERFUME_ATMOS_BY_PRESET: Record<EssencePresetId, string> = {
-  amber:
-    'bg-[radial-gradient(ellipse_62%_58%_at_70%_46%,rgba(238,144,42,0.20),rgba(132,58,12,0.08)_46%,transparent_76%),radial-gradient(ellipse_48%_42%_at_18%_28%,rgba(214,190,150,0.07),transparent_70%)]',
-  cobalt:
-    'bg-[radial-gradient(ellipse_62%_58%_at_70%_46%,rgba(42,168,236,0.20),rgba(28,118,162,0.08)_46%,transparent_76%),radial-gradient(ellipse_48%_42%_at_18%_28%,rgba(82,214,196,0.07),transparent_70%)]',
-  noir:
-    'bg-[radial-gradient(ellipse_62%_58%_at_70%_46%,rgba(164,180,224,0.16),rgba(68,78,108,0.08)_46%,transparent_76%),radial-gradient(ellipse_48%_42%_at_18%_28%,rgba(214,222,245,0.06),transparent_70%)]',
-  champagne:
-    'bg-[radial-gradient(ellipse_62%_58%_at_70%_46%,rgba(248,186,62,0.20),rgba(162,102,18,0.08)_46%,transparent_76%),radial-gradient(ellipse_48%_42%_at_18%_28%,rgba(242,208,136,0.07),transparent_70%)]',
-  obsidian:
-    'bg-[radial-gradient(ellipse_62%_58%_at_70%_46%,rgba(184,116,252,0.20),rgba(98,42,168,0.08)_46%,transparent_76%),radial-gradient(ellipse_48%_42%_at_18%_28%,rgba(212,166,255,0.07),transparent_70%)]',
-  violet:
-    'bg-[radial-gradient(ellipse_62%_58%_at_70%_46%,rgba(174,116,246,0.19),rgba(90,42,158,0.08)_46%,transparent_76%)]',
-  emerald:
-    'bg-[radial-gradient(ellipse_62%_58%_at_70%_46%,rgba(54,196,174,0.19),rgba(22,110,96,0.08)_46%,transparent_76%)]',
+  amber: 'bg-[radial-gradient(circle_at_70%_45%,rgba(238,144,42,0.14),transparent_65%)]',
+  cobalt: 'bg-[radial-gradient(circle_at_70%_45%,rgba(42,168,236,0.14),transparent_65%)]',
+  noir: 'bg-[radial-gradient(circle_at_70%_45%,rgba(164,180,224,0.12),transparent_65%)]',
+  champagne: 'bg-[radial-gradient(circle_at_70%_45%,rgba(248,186,62,0.14),transparent_65%)]',
+  obsidian: 'bg-[radial-gradient(circle_at_70%_45%,rgba(184,116,252,0.14),transparent_65%)]',
+  violet: 'bg-[radial-gradient(circle_at_70%_45%,rgba(174,116,246,0.14),transparent_65%)]',
+  emerald: 'bg-[radial-gradient(circle_at_70%_45%,rgba(54,196,174,0.14),transparent_65%)]',
 };
 
 const TESTIMONIALS = [
@@ -59,15 +51,9 @@ const TESTIMONIALS = [
 ];
 
 export const HomePage: React.FC = () => {
-  const {
-    products,
-    addToCart,
-    addSubscriber,
-    showToast,
-    isCartOpen,
-    isSearchOpen,
-    quickViewProduct,
-  } = useStore();
+  const { products } = useStore();
+  const { addToCart, addSubscriber, showToast } = useCatalogActions();
+  const { isCartOpen, isSearchOpen, quickViewProduct } = useOverlayState();
 
   const signatureFragrances = products;
 
@@ -121,12 +107,7 @@ export const HomePage: React.FC = () => {
         <div className="relative max-w-[1380px] mx-auto px-3.5 sm:px-8 pt-5 pb-10 sm:pt-8 sm:pb-16 lg:py-16 grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-10 lg:gap-8 items-center lg:min-h-[calc(100vh-4rem)]">
           {/* Left Typography & Fragrance Selector Column */}
           <div className="lg:col-span-6 space-y-5 sm:space-y-8 z-10 min-w-0">
-            <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.45 }}
-              className="space-y-3.5 sm:space-y-5"
-            >
+            <div className="space-y-3.5 sm:space-y-5">
               <p className="text-[11px] sm:text-xs font-medium uppercase tracking-[0.2em] sm:tracking-[0.22em] text-[#d6be96]">
                 NORVA · Haute Parfumerie
               </p>
@@ -138,21 +119,16 @@ export const HomePage: React.FC = () => {
 
               <p className="text-sm sm:text-[17px] text-white/65 max-w-[54ch] leading-relaxed">
                 Five signature 50ml extraits housed in thick, hand-beveled smoked optical silica.
-                Move your cursor or drag to tilt the flacon and inspect live glass refraction.
+                Select any signature creation below to explore its olfactory profile.
               </p>
-            </motion.div>
+            </div>
 
             {/* Primary CTA Buttons */}
-            <motion.div
-              initial={{ opacity: 0, y: 14 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.45, delay: 0.08 }}
-              className="grid grid-cols-1 min-[400px]:grid-cols-2 sm:flex sm:flex-wrap items-center gap-2.5 sm:gap-4"
-            >
+            <div className="grid grid-cols-1 min-[400px]:grid-cols-2 sm:flex sm:flex-wrap items-center gap-2.5 sm:gap-4">
               <MagneticWrap className="w-full sm:w-auto">
                 <Link
                   to="/shop"
-                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 sm:gap-2.5 h-11 sm:h-12 px-4 sm:px-7 rounded-lg bg-[#f2e6d5] hover:bg-[#d6be96] text-[#050508] text-[11px] sm:text-xs font-semibold uppercase tracking-[0.11em] sm:tracking-[0.14em] transition-colors whitespace-nowrap shrink-0 shadow-[0_14px_34px_-8px_rgba(214,190,150,0.34)]"
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 sm:gap-2.5 h-11 sm:h-12 px-4 sm:px-7 rounded-lg bg-[#f2e6d5] hover:bg-[#d6be96] text-[#050508] text-[11px] sm:text-xs font-semibold uppercase tracking-[0.11em] sm:tracking-[0.14em] transition-colors whitespace-nowrap shrink-0"
                 >
                   <span>Shop Now · {formatPKR(activeHeroProduct?.sizes[0].price ?? 2500)}</span>
                   <ArrowRight className="w-4 h-4 shrink-0" />
@@ -167,26 +143,21 @@ export const HomePage: React.FC = () => {
                   <span>Explore Collection</span>
                 </Link>
               </MagneticWrap>
-            </motion.div>
+            </div>
 
-            {/* Live 3D Flacon Switcher for the 5 Signature Fragrances */}
+            {/* Live Flacon Switcher for the 5 Signature Fragrances */}
             {activeHeroProduct && (
-              <motion.div
-                initial={{ opacity: 0, y: 14 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.45, delay: 0.14 }}
-                className="pt-3.5 sm:pt-4 border-t border-white/[0.08] space-y-3.5 sm:space-y-4"
-              >
+              <div className="pt-3.5 sm:pt-4 border-t border-white/[0.08] space-y-3.5 sm:space-y-4">
                 <div className="flex items-center justify-between gap-2 sm:gap-4">
                   <span className="text-[10.5px] sm:text-[11px] uppercase tracking-[0.14em] sm:tracking-[0.18em] text-white/45 truncate">
-                    Inspect Signature Flacon in 3D
+                    Select Signature Flacon
                   </span>
                   <span className="font-mono-tabular text-[11.5px] sm:text-xs text-[#d6be96] shrink-0">
                     Edition {activeHeroProduct.numberCode} / 05
                   </span>
                 </div>
 
-                {/* Clean selector tabs (swipeable single row on mobile, wrapped on sm+) */}
+                {/* Clean selector tabs */}
                 <div className="flex overflow-x-auto no-scrollbar sm:flex-wrap items-center gap-2 -mx-3.5 px-3.5 sm:mx-0 sm:px-0 pb-1 sm:pb-0">
                   {signatureFragrances.map((frag, idx) => {
                     const active = idx === activeHeroIndex;
@@ -195,9 +166,9 @@ export const HomePage: React.FC = () => {
                         key={frag.id}
                         type="button"
                         onClick={() => setActiveHeroIndex(idx)}
-                        className={`min-h-[40px] sm:min-h-0 px-3 sm:px-3.5 py-2 rounded-lg text-[11.5px] sm:text-xs font-medium transition-all duration-150 cursor-pointer whitespace-nowrap shrink-0 ${
+                        className={`min-h-[40px] sm:min-h-0 px-3 sm:px-3.5 py-2 rounded-lg text-[11.5px] sm:text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                           active
-                            ? 'bg-[#12121b] text-white border border-[#d6be96]/70 shadow-[0_8px_24px_-6px_rgba(214,190,150,0.28)]'
+                            ? 'bg-[#12121b] text-white border border-[#d6be96]/70'
                             : 'bg-[#09090e] text-white/60 border border-white/10 hover:text-white hover:border-white/25'
                         }`}
                       >
@@ -210,73 +181,68 @@ export const HomePage: React.FC = () => {
                   })}
                 </div>
 
-                {/* Active Flacon Live Brief with Perfumed Shadow & Mist Gradient */}
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={activeHeroProduct.id}
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -4 }}
-                    transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-                    className={`relative overflow-hidden p-3.5 sm:p-4 rounded-xl bg-[#0a0a10] border border-white/12 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 will-change-[opacity,transform] ${heroCardAura.shadowClass}`}
-                  >
-                    <div
-                      aria-hidden="true"
-                      className={`pointer-events-none absolute inset-0 opacity-85 ${heroCardAura.ambientGlow}`}
-                    />
-                    <div className="relative z-[1] space-y-1 min-w-0">
-                      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 text-[11.5px] sm:text-xs text-white/50">
-                        <span>{activeHeroProduct.concentration}</span>
-                        <span aria-hidden="true">·</span>
-                        <span>{activeHeroProduct.sizes[0].label}</span>
-                        <span aria-hidden="true">·</span>
-                        <span>{activeHeroProduct.family}</span>
-                      </div>
-                      <Link
-                        to={`/product/${activeHeroProduct.slug}`}
-                        className="font-serif-display text-xl sm:text-2xl text-white hover:text-[#d6be96] transition-colors block truncate"
-                      >
-                        {activeHeroProduct.name}
-                      </Link>
-                      <p className="text-xs text-white/55">{activeHeroProduct.keyNotesSummary}</p>
+                {/* Active Flacon Live Brief */}
+                <div
+                  key={activeHeroProduct.id}
+                  className={`relative overflow-hidden p-3.5 sm:p-4 rounded-xl bg-[#0a0a10] border border-white/12 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 ${heroCardAura.shadowClass}`}
+                >
+                  <div
+                    aria-hidden="true"
+                    className={`pointer-events-none absolute inset-0 opacity-80 ${heroCardAura.ambientGlow}`}
+                  />
+                  <div className="relative z-[1] space-y-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 text-[11.5px] sm:text-xs text-white/50">
+                      <span>{activeHeroProduct.concentration}</span>
+                      <span aria-hidden="true">·</span>
+                      <span>{activeHeroProduct.sizes[0].label}</span>
+                      <span aria-hidden="true">·</span>
+                      <span>{activeHeroProduct.family}</span>
                     </div>
+                    <Link
+                      to={`/product/${activeHeroProduct.slug}`}
+                      className="font-serif-display text-xl sm:text-2xl text-white hover:text-[#d6be96] transition-colors block truncate"
+                    >
+                      {activeHeroProduct.name}
+                    </Link>
+                    <p className="text-xs text-white/55">{activeHeroProduct.keyNotesSummary}</p>
+                  </div>
 
-                    <div className="relative z-[1] flex items-center justify-between sm:justify-start gap-3 w-full sm:w-auto pt-1 sm:pt-0 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => addToCart(activeHeroProduct, 0, 1, true)}
-                        className="min-h-[42px] sm:h-10 px-3.5 sm:px-4 rounded-lg bg-[#14141f] hover:bg-[#d6be96] active:scale-[0.98] border border-[#d6be96]/30 text-white hover:text-[#050508] text-xs font-medium flex items-center gap-2 transition-all duration-150 cursor-pointer whitespace-nowrap"
-                      >
-                        <ShoppingBag className="w-3.5 h-3.5 shrink-0" />
-                        <span className="font-mono-tabular">
-                          {formatPKR(activeHeroProduct.sizes[0].price)}
-                        </span>
-                        <span>· Add</span>
-                      </button>
+                  <div className="relative z-[1] flex items-center justify-between sm:justify-start gap-3 w-full sm:w-auto pt-1 sm:pt-0 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => addToCart(activeHeroProduct, 0, 1, true)}
+                      className="min-h-[42px] sm:h-10 px-3.5 sm:px-4 rounded-lg bg-[#14141f] hover:bg-[#d6be96] border border-[#d6be96]/30 text-white hover:text-[#050508] text-xs font-medium flex items-center gap-2 transition-colors cursor-pointer whitespace-nowrap"
+                    >
+                      <ShoppingBag className="w-3.5 h-3.5 shrink-0" />
+                      <span className="font-mono-tabular">
+                        {formatPKR(activeHeroProduct.sizes[0].price)}
+                      </span>
+                      <span>· Add</span>
+                    </button>
 
-                      <Link
-                        to={`/product/${activeHeroProduct.slug}`}
-                        className="min-h-[40px] sm:min-h-0 inline-flex items-center px-1 text-xs font-medium text-[#d6be96] hover:underline whitespace-nowrap"
-                      >
-                        Details →
-                      </Link>
-                    </div>
-                  </motion.div>
-                </AnimatePresence>
-              </motion.div>
+                    <Link
+                      to={`/product/${activeHeroProduct.slug}`}
+                      className="min-h-[40px] sm:min-h-0 inline-flex items-center px-1 text-xs font-medium text-[#d6be96] hover:underline whitespace-nowrap"
+                    >
+                      Details →
+                    </Link>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
 
-          {/* Right Interactive 3D Smoked-Glass Perfume Bottle */}
+          {/* Right Interactive 3D Smoked-Glass Perfume Bottle (Static WebP/JPEG studio image on Windows 7 & weak PCs) */}
           <div className="lg:col-span-6 min-w-0">
             {activeHeroProduct && (
               <ThreeBottleStage
                 label={activeHeroProduct.bottle3D.label}
                 preset={activeHeroProduct.bottle3D.preset}
                 fallbackImage={activeHeroProduct.primaryImage}
-                preloadSignaturePresets
                 paused={stagePaused}
-                className="w-full h-[340px] min-[390px]:h-[380px] sm:h-[580px] lg:h-[670px]"
+                priorityImage
+                interactiveControls
+                className="w-full h-[340px] min-[390px]:h-[380px] sm:h-[580px] lg:h-[670px] rounded-2xl border border-white/[0.08]"
               />
             )}
           </div>

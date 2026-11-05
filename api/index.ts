@@ -26,16 +26,28 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       req.url = `/api${pathname.startsWith('/') ? '' : '/'}${pathname}${search ? `?${search}` : ''}`;
     }
 
-    app(req as never, res as never);
+    await new Promise<void>((resolve, reject) => {
+      res.on('finish', () => resolve());
+      res.on('close', () => resolve());
+      res.on('error', (err) => reject(err));
+      app(req as never, res as never, (err: unknown) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
   } catch (err) {
-    console.error('NORVA API handler error:', err);
+    console.error(
+      '[NORVA Vercel Handler Error]:',
+      err instanceof Error ? err.stack || err.message : err,
+    );
     if (!res.headersSent) {
       res.statusCode = 500;
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.end(
         JSON.stringify({
           ok: false,
-          error: 'NORVA order service encountered a temporary error. Please try again in a moment.',
+          error:
+            'Backend authentication server error. Please verify database connection and environment variables in Vercel settings.',
         }),
       );
     }

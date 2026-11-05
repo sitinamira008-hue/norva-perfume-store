@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -16,8 +16,7 @@ import {
   Truck,
 } from 'lucide-react';
 import { formatPKR } from '../data/products';
-import { useStore } from '../context/StoreContext';
-import { ThreeBottleStage } from '../components/ThreeBottleStage';
+import { useOverlayState, useStore } from '../context/StoreContext';
 import {
   LuxuryImage,
   PERFUME_CARD_SHADOW_BY_PRESET,
@@ -30,6 +29,10 @@ import {
   buildProductWhatsAppUrl,
 } from '../components/WhatsAppFloatingButton';
 
+const LazyThreeBottleStage = lazy(() =>
+  import('../components/ThreeBottleStage').then((m) => ({ default: m.ThreeBottleStage })),
+);
+
 export const ProductDetailPage: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
@@ -41,10 +44,8 @@ export const ProductDetailPage: React.FC = () => {
     isInWishlist,
     customReviews,
     addProductReview,
-    isCartOpen,
-    isSearchOpen,
-    quickViewProduct,
   } = useStore();
+  const { isCartOpen, isSearchOpen, quickViewProduct } = useOverlayState();
 
   const normalizedSlug = slug === 'khamrah-qahwa' ? 'khamrah-qawa' : slug;
   const product = useMemo(
@@ -243,16 +244,29 @@ export const ProductDetailPage: React.FC = () => {
             <div
               className={`rounded-2xl overflow-hidden bg-[#06060a] border border-white/12 ${stageAura.shadowClass}`}
             >
-              <ThreeBottleStage
-                label={{
-                  ...product.bottle3D.label,
-                  volume: selectedSize.label.toUpperCase(),
-                }}
-                preset={product.bottle3D.preset}
-                fallbackImage={product.primaryImage}
-                paused={stagePaused}
-                className="w-full h-[350px] min-[390px]:h-[390px] sm:h-[560px]"
-              />
+              <Suspense
+                fallback={
+                  <div className="w-full h-[350px] min-[390px]:h-[390px] sm:h-[560px] flex items-center justify-center bg-[#06060a]">
+                    <LuxuryImage
+                      src={product.primaryImage}
+                      alt={product.name}
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                }
+              >
+                <LazyThreeBottleStage
+                  label={{
+                    ...product.bottle3D.label,
+                    volume: selectedSize.label.toUpperCase(),
+                  }}
+                  preset={product.bottle3D.preset}
+                  fallbackImage={product.primaryImage}
+                  paused={stagePaused}
+                  interactiveControls
+                  className="w-full h-[350px] min-[390px]:h-[390px] sm:h-[560px]"
+                />
+              </Suspense>
             </div>
           ) : (
             <div

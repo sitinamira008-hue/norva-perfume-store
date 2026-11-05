@@ -1,18 +1,33 @@
-import imgKhamrah from '../assets/images/khamrah_qawa_bottle_1793438382586.jpg';
-import imgCoolWater from '../assets/images/cool_water_bottle_1793438384442.jpg';
-const imgRebel = '/assets/aistudio/image_4faf920d.png';
-import imgJadora from '../assets/images/jadora_rect_bottle_1793439318180.jpg';
-import imgGucciFlora from '../assets/images/gucci_flora_rect_bottle_1793439318069.jpg';
-import imgAtelier from '../assets/images/editorial_craftsmanship_atelier_1793434423009.jpg';
+import imgKhamrahWebp from '../assets/images/optimized/khamrah_qawa.webp';
+import imgKhamrahJpg from '../assets/images/optimized/khamrah_qawa.jpg';
+import imgCoolWaterWebp from '../assets/images/optimized/cool_water.webp';
+import imgCoolWaterJpg from '../assets/images/optimized/cool_water.jpg';
+import imgRebelWebp from '../assets/images/optimized/9mm_rebel.webp';
+import imgRebelJpg from '../assets/images/optimized/9mm_rebel.jpg';
+import imgJadoraWebp from '../assets/images/optimized/jadora.webp';
+import imgJadoraJpg from '../assets/images/optimized/jadora.jpg';
+import imgGucciFloraWebp from '../assets/images/optimized/gucci_flora.webp';
+import imgGucciFloraJpg from '../assets/images/optimized/gucci_flora.jpg';
 
-import { EssencePresetId } from '../webgl/FacetBottleScene';
-import { BottleLabelContent } from '../webgl/labelTexture';
+import type { BottleLabelContent, EssencePresetId } from '../webgl/bottleTypes';
 
-export const ATELIER_HERO_IMAGE = imgAtelier;
-
-export function formatPKR(amount: number): string {
-  return `PKR ${amount.toLocaleString('en-PK')}`;
-}
+/**
+ * Maps any primary image URL (WebP or JPEG) to its WebP + progressive JPEG pair
+ * so `<LuxuryImage>` automatically serves lightweight WebP (20–37 KB) on modern browsers
+ * and progressive JPEG (26–60 KB) on legacy Windows 7 browsers without extra props.
+ */
+export const IMAGE_ASSET_PAIR_MAP: Record<string, { webp: string; jpg: string }> = {
+  [imgKhamrahWebp]: { webp: imgKhamrahWebp, jpg: imgKhamrahJpg },
+  [imgKhamrahJpg]: { webp: imgKhamrahWebp, jpg: imgKhamrahJpg },
+  [imgCoolWaterWebp]: { webp: imgCoolWaterWebp, jpg: imgCoolWaterJpg },
+  [imgCoolWaterJpg]: { webp: imgCoolWaterWebp, jpg: imgCoolWaterJpg },
+  [imgRebelWebp]: { webp: imgRebelWebp, jpg: imgRebelJpg },
+  [imgRebelJpg]: { webp: imgRebelWebp, jpg: imgRebelJpg },
+  [imgJadoraWebp]: { webp: imgJadoraWebp, jpg: imgJadoraJpg },
+  [imgJadoraJpg]: { webp: imgJadoraWebp, jpg: imgJadoraJpg },
+  [imgGucciFloraWebp]: { webp: imgGucciFloraWebp, jpg: imgGucciFloraJpg },
+  [imgGucciFloraJpg]: { webp: imgGucciFloraWebp, jpg: imgGucciFloraJpg },
+};
 
 export type FragranceFamily =
   | 'Oud & Amber'
@@ -20,16 +35,15 @@ export type FragranceFamily =
   | 'Fresh & Aquatic'
   | 'Floral & Citrus';
 
-export type CollectionSlug =
-  | 'signature'
-  | 'mens'
-  | 'womens'
-  | 'unisex'
-  | 'oud'
-  | 'fresh';
+export type ScentFamily = FragranceFamily;
+
+export type CollectionSlug = 'signature' | 'mens' | 'womens' | 'unisex' | 'oud' | 'fresh';
+
+export type GenderProfile = 'Unisex' | 'Masculine-Leaning' | 'Feminine-Leaning';
 
 export interface ProductSizeOption {
   label: string;
+  ml: number;
   price: number;
   sku: string;
 }
@@ -48,68 +62,146 @@ export interface CatalogProduct {
   id: string;
   slug: string;
   numberCode: string;
+  editionNumber: string;
   name: string;
   subtitle: string;
-  concentration: string;
+  concentration: 'Extrait de Parfum' | 'Eau de Parfum Intense' | 'Eau de Parfum';
+  oilConcentrationPct: number;
   family: FragranceFamily;
+  gender: GenderProfile;
   collections: CollectionSlug[];
   isBestSeller?: boolean;
   isNewArrival?: boolean;
-  isSignature?: boolean;
-  shortDescription: string;
-  editorialStory: string;
+  rating: number;
+  reviewCount: number;
   keyNotesSummary: string;
+  shortDescription: string;
+  description: string;
+  editorialStory: string;
+  longevityLabel: string;
+  longevityScore: number;
+  projectionLabel: string;
+  projectionScore: number;
   pyramid: {
     top: string[];
     heart: string[];
     base: string[];
   };
-  longevityLabel: string;
-  longevityScore: number; // 1-100
-  projectionLabel: string;
-  projectionScore: number; // 1-100
-  sizes: ProductSizeOption[];
+  topNotes: string[];
+  heartNotes: string[];
+  baseNotes: string[];
+  ingredients: string;
   primaryImage: string;
+  primaryImageFallback: string;
   gallery: { src: string; caption: string }[];
+  sizes: ProductSizeOption[];
   bottle3D: {
     preset: EssencePresetId;
     label: BottleLabelContent;
   };
+  essencePreset: EssencePresetId;
+  bottleLabel: BottleLabelContent;
   reviews: ProductReview[];
 }
 
+export interface CollectionMetaItem {
+  title: string;
+  kicker: string;
+  description: string;
+  bannerImage: string;
+}
+
+export const COLLECTIONS_META: Record<CollectionSlug, CollectionMetaItem> = {
+  signature: {
+    title: 'Signature Wardrobe',
+    kicker: 'House Icons',
+    description:
+      'All five NORVA 50ml extraits and eaux de parfum—crafted in smoked optical glass for extraordinary 10–14 hour longevity at PKR 2,500.',
+    bannerImage: imgKhamrahJpg,
+  },
+  mens: {
+    title: 'Men’s Picks',
+    kicker: 'Commanding Presence',
+    description:
+      'Crisp marine accords, roasted pineapple, smoked leather, and cedarwood tailored for lasting masculine presence.',
+    bannerImage: imgRebelJpg,
+  },
+  womens: {
+    title: 'Women’s Picks',
+    kicker: 'Luminous Florals',
+    description:
+      'Radiant white gardenia, jasmine sambac, powdery iris, and creamy golden sandalwood.',
+    bannerImage: imgGucciFloraJpg,
+  },
+  unisex: {
+    title: 'Unisex Icons',
+    kicker: 'Shared Luxury',
+    description:
+      'Balanced oud, spiced Arabica coffee, amber resin, and warm woods created to adapt effortlessly to every wearer.',
+    bannerImage: imgKhamrahJpg,
+  },
+  oud: {
+    title: 'Oud & Dark Woods',
+    kicker: 'Evening & Statement',
+    description:
+      'Deep resinous oud, saffron, dark leather, and creamy sandalwood built for cool nights and formal occasions.',
+    bannerImage: imgJadoraJpg,
+  },
+  fresh: {
+    title: 'Fresh & Luminous',
+    kicker: 'Daytime & Crisp',
+    description:
+      'Invigorating sea breeze, bergamot, crisp orchard fruit, and second-skin white musk formulated for warm weather.',
+    bannerImage: imgCoolWaterJpg,
+  },
+};
+
 export const PRODUCTS: CatalogProduct[] = [
-  // =========================================================================
-  // 01 — KHAMRAH QAWA
-  // =========================================================================
   {
     id: 'frag-01',
     slug: 'khamrah-qawa',
     numberCode: '01',
+    editionNumber: 'N° 01',
     name: 'Khamrah Qawa',
-    subtitle: 'Dark, mysterious, sophisticated.',
+    subtitle: 'Smoked Oud, Spiced Coffee & Warm Amber',
     concentration: 'Extrait de Parfum',
+    oilConcentrationPct: 30,
     family: 'Oud & Amber',
-    collections: ['signature', 'oud', 'mens', 'unisex'],
-    isSignature: true,
+    gender: 'Unisex',
+    collections: ['signature', 'unisex', 'oud', 'mens'],
     isBestSeller: true,
+    rating: 4.9,
+    reviewCount: 142,
+    keyNotesSummary: 'Saffron · Roasted Coffee · Smoked Leather · Black Amber',
     shortDescription:
-      'A nocturnal study in smoked Cambodian oud, supple saddle leather, black amber resin, and ceremonial saffron.',
+      'Khamrah Qawa opens with warm cardamom, saffron, and dark roasted coffee bean before settling into supple leather, oud wood, and golden amber resin.',
+    description:
+      'Khamrah Qawa opens with warm cardamom, saffron, and dark roasted coffee bean before settling into supple leather, oud wood, and golden amber resin. Rich, smooth, and built to project effortlessly into the night.',
     editorialStory:
-      'Macerated for ninety days in dark smoked silica vats, Khamrah Qawa opens with darkly roasted Arabica and crimson saffron threads before descending into a velvet core of smoked leather, aged Cambodian oud, and molten labdanum amber. Built for evenings that linger into dawn.',
-    keyNotesSummary: 'Oud · Leather · Amber · Saffron',
+      'Compounded at 30% aromatic oil concentration and cold-macerated to unite spiced roasted Arabica warmth with smoky resinous woods and velvety benzoin.',
+    longevityLabel: '12 – 14+ Hours on Skin',
+    longevityScore: 96,
+    projectionLabel: 'Enveloping Evening Trail',
+    projectionScore: 92,
     pyramid: {
-      top: ['Crimson Saffron', 'Roasted Arabica Bean', 'Green Cardamom'],
-      heart: ['Smoked Saddle Leather', 'Damascus Black Plum', 'Incense Smoke'],
-      base: ['Aged Cambodian Oud', 'Black Amber Resin', 'Roasted Tonka'],
+      top: ['Saffron', 'Cardamom', 'Roasted Coffee'],
+      heart: ['Smoked Leather', 'Dark Oud', 'Incense'],
+      base: ['Black Amber', 'Benzoin', 'Warm Vanilla'],
     },
-    longevityLabel: '12–14 Hours on Skin',
-    longevityScore: 95,
-    projectionLabel: 'Commanding Architectural Trail',
-    projectionScore: 88,
-    sizes: [{ label: '50ml', price: 2500, sku: 'NV-KQ-50' }],
-    primaryImage: imgKhamrah,
-    gallery: [{ src: imgKhamrah, caption: 'Khamrah Qawa — Signature Flacon' }],
+    topNotes: ['Saffron', 'Cardamom', 'Roasted Coffee'],
+    heartNotes: ['Smoked Leather', 'Dark Oud', 'Incense'],
+    baseNotes: ['Black Amber', 'Benzoin', 'Warm Vanilla'],
+    ingredients:
+      'Alcohol Denat., Parfum (Fragrance), Aqua (Water), Coumarin, Linalool, Limonene, Eugenol, Cinnamal.',
+    primaryImage: imgKhamrahJpg,
+    primaryImageFallback: imgKhamrahJpg,
+    gallery: [
+      {
+        src: imgKhamrahJpg,
+        caption: 'Khamrah Qawa · 50ml Smoked Amber Flacon',
+      },
+    ],
+    sizes: [{ label: '50ml', ml: 50, price: 2500, sku: 'NV-01-50' }],
     bottle3D: {
       preset: 'amber',
       label: {
@@ -122,322 +214,361 @@ export const PRODUCTS: CatalogProduct[] = [
         editionCode: 'N° 01 · OUD',
       },
     },
+    essencePreset: 'amber',
+    bottleLabel: {
+      kicker: 'FRAGRANCE 01 · EXTRAIT',
+      titleLine1: 'Khamrah',
+      titleLine2: 'Qawa',
+      notesLine: 'Oud · Leather · Amber · Saffron',
+      concentration: 'EXTRAIT DE PARFUM',
+      volume: '50 ML',
+      editionCode: 'N° 01 · OUD',
+    },
     reviews: [
       {
-        id: 'rev-kq-1',
-        author: 'Zain Raza',
+        id: 'rev-101',
+        author: 'Hamza R.',
         location: 'Lahore',
         rating: 5,
-        date: 'October 2026',
-        title: 'Unmatched depth and smoked-leather drydown',
+        date: 'Feb 14, 2025',
+        title: 'Incredible projection and lasting',
         comment:
-          'One spray on a waistcoat or blazer lasts for days. The saffron and dark coffee facets balance the richness of the oud effortlessly.',
+          'Two sprays easily last the entire evening on clothes. Warm coffee and amber dry-down feels way above its price point.',
       },
       {
-        id: 'rev-kq-2',
-        author: 'Areeba Tariq',
-        location: 'Karachi',
+        id: 'rev-102',
+        author: 'Zainab M.',
+        location: 'Islamabad',
         rating: 5,
-        date: 'September 2026',
-        title: 'True gallery-grade perfumery',
+        date: 'Jan 29, 2025',
+        title: 'My go-to winter evening scent',
         comment:
-          'Both the heavy smoked crystal flacon and the oil concentration feel far more luxurious than anything else in my collection.',
+          'Smooth spiced oud without any harshness. Packaging and bottle presentation are spotless.',
       },
     ],
   },
-
-  // =========================================================================
-  // 02 — COOL WATER
-  // =========================================================================
   {
     id: 'frag-02',
     slug: 'cool-water',
     numberCode: '02',
+    editionNumber: 'N° 02',
     name: 'Cool Water',
-    subtitle: 'Elegant, romantic and sensual.',
+    subtitle: 'Crisp Marine Breeze, Mint & Clean Musk',
     concentration: 'Eau de Parfum Intense',
-    family: 'Floral & Musk',
-    collections: ['signature', 'womens', 'unisex'],
-    isSignature: true,
+    oilConcentrationPct: 24,
+    family: 'Fresh & Aquatic',
+    gender: 'Masculine-Leaning',
+    collections: ['signature', 'mens', 'fresh'],
     isBestSeller: true,
+    rating: 4.8,
+    reviewCount: 118,
+    keyNotesSummary: 'Sea Breeze · Peppermint · Lavender · Cedarwood',
     shortDescription:
-      'Moonlit Centifolia rose and night-blooming jasmine suspended in warm Madagascar vanilla and skin-close white silk musk.',
+      'Cool Water delivers an invigorating wave of chilled sea breeze, bright bergamot, and aromatic lavender over a crisp base of cedarwood and white musk.',
+    description:
+      'Cool Water delivers an invigorating wave of chilled sea breeze, bright bergamot, and aromatic lavender over a crisp base of cedarwood and white musk. Effortlessly clean and refreshing.',
     editorialStory:
-      'Reimagining nocturnal romance through translucent chiaroscuro, Cool Water drapes dewy Grasse rose petals and narcotic Sambac jasmine across a tactile foundation of raw Madagascar vanilla bean and weightless cashmere musk.',
-    keyNotesSummary: 'Rose · Vanilla · Musk · Jasmine',
-    pyramid: {
-      top: ['Dewy Centifolia Rose', 'Pink Peppercorn', 'Bergamot Mist'],
-      heart: ['Night-Blooming Jasmine', 'Sambac Absolute', 'Velvet Peony'],
-      base: ['Madagascar Bourbon Vanilla', 'White Silk Musk', 'Soft Ambergris'],
-    },
-    longevityLabel: '9–11 Hours on Skin',
+      'Re-engineered at Eau de Parfum Intense strength specifically for warm climates—preserving crisp coastal freshness from morning commute through evening.',
+    longevityLabel: '8 – 10 Hours on Skin',
     longevityScore: 86,
-    projectionLabel: 'Sensual Luminous Aura',
-    projectionScore: 76,
-    sizes: [{ label: '50ml', price: 2500, sku: 'NV-CW-50' }],
-    primaryImage: imgCoolWater,
-    gallery: [{ src: imgCoolWater, caption: 'Cool Water — Frosted Cobalt & Seafoam Flacon' }],
+    projectionLabel: 'Crisp Refined Aura',
+    projectionScore: 82,
+    pyramid: {
+      top: ['Sea Breeze', 'Peppermint', 'Bergamot'],
+      heart: ['Lavender', 'Geranium', 'Neroli'],
+      base: ['Cedarwood', 'White Musk', 'Ambergris Accord'],
+    },
+    topNotes: ['Sea Breeze', 'Peppermint', 'Bergamot'],
+    heartNotes: ['Lavender', 'Geranium', 'Neroli'],
+    baseNotes: ['Cedarwood', 'White Musk', 'Ambergris Accord'],
+    ingredients:
+      'Alcohol Denat., Parfum (Fragrance), Aqua (Water), Limonene, Linalool, Citral, Citronellol, Geraniol.',
+    primaryImage: imgCoolWaterJpg,
+    primaryImageFallback: imgCoolWaterJpg,
+    gallery: [
+      {
+        src: imgCoolWaterJpg,
+        caption: 'Cool Water · 50ml Frosted Cobalt Flacon',
+      },
+    ],
+    sizes: [{ label: '50ml', ml: 50, price: 2500, sku: 'NV-02-50' }],
     bottle3D: {
       preset: 'cobalt',
       label: {
         kicker: 'FRAGRANCE 02 · INTENSE',
         titleLine1: 'Cool',
         titleLine2: 'Water',
-        notesLine: 'Rose · Vanilla · Musk · Jasmine',
+        notesLine: 'Marine Breeze · Lavender · Cedar · Musk',
         concentration: 'EAU DE PARFUM INTENSE',
         volume: '50 ML',
-        editionCode: 'N° 02 · FLORAL',
+        editionCode: 'N° 02 · MARINE',
       },
+    },
+    essencePreset: 'cobalt',
+    bottleLabel: {
+      kicker: 'FRAGRANCE 02 · INTENSE',
+      titleLine1: 'Cool',
+      titleLine2: 'Water',
+      notesLine: 'Marine Breeze · Lavender · Cedar · Musk',
+      concentration: 'EAU DE PARFUM INTENSE',
+      volume: '50 ML',
+      editionCode: 'N° 02 · MARINE',
     },
     reviews: [
       {
-        id: 'rev-cw-1',
-        author: 'Maham Siddiqui',
-        location: 'Islamabad',
+        id: 'rev-201',
+        author: 'Bilal K.',
+        location: 'Karachi',
         rating: 5,
-        date: 'October 2026',
-        title: 'Velvety, intimate, endlessly complimented',
+        date: 'Feb 19, 2025',
+        title: 'Perfect for Karachi heat',
         comment:
-          'The balance between dewy rose, night jasmine, and warm vanilla feels effortlessly sophisticated—never overly sweet, purely sensual.',
+          'Super clean, cooling, and fresh. Unlike regular freshies, this actually stays noticeable through a full workday.',
       },
     ],
   },
-
-  // =========================================================================
-  // 03 — 9mM REBEL
-  // =========================================================================
   {
     id: 'frag-03',
     slug: '9mm-rebel',
     numberCode: '03',
+    editionNumber: 'N° 03',
     name: '9mM Rebel',
-    subtitle: 'Fresh, aquatic and modern.',
+    subtitle: 'Smoky Pineapple, Bergamot & Dark Woods',
     concentration: 'Eau de Parfum',
+    oilConcentrationPct: 25,
     family: 'Fresh & Aquatic',
-    collections: ['signature', 'fresh', 'mens', 'unisex'],
-    isSignature: true,
+    gender: 'Masculine-Leaning',
+    collections: ['signature', 'mens', 'unisex', 'fresh', 'oud'],
+    isBestSeller: true,
     isNewArrival: true,
+    rating: 4.9,
+    reviewCount: 96,
+    keyNotesSummary: 'Roasted Pineapple · Bergamot · Dry Cedarwood · Ambroxan',
     shortDescription:
-      'Crisp Calabrian bergamot and cold Atlantic marine accords anchored by dry Atlas cedarwood and mineral vetiver.',
+      '9mM Rebel strikes with vibrant mandarin, crisp apple, and caramelized pineapple before transitioning into dry cedarwood, oakmoss, and magnetic smoky ambroxan.',
+    description:
+      '9mM Rebel strikes with vibrant mandarin, crisp apple, and caramelized pineapple before transitioning into dry cedarwood, oakmoss, and magnetic smoky ambroxan. Bold, modern, and compliment-pulling.',
     editorialStory:
-      'Cut like architectural glass against storm-dark sea cliffs, 9mM Rebel pairs electric cold-pressed Calabrian bergamot with ozonic marine spray and crushed violet leaf over a razor-clean spine of dry Atlas cedarwood.',
-    keyNotesSummary: 'Bergamot · Marine Accords · Cedarwood',
+      'Built around a high-contrast accord of bright fruit top notes anchored by smoky woods and mineral ambroxan for commanding all-season versatility.',
+    longevityLabel: '10 – 12 Hours on Skin',
+    longevityScore: 91,
+    projectionLabel: 'Commanding Trail',
+    projectionScore: 90,
     pyramid: {
-      top: ['Calabrian Bergamot', 'Sea Salt Spray', 'Crushed Green Mint'],
-      heart: ['Cold Marine Accords', 'Crushed Violet Leaf', 'Black Tellicherry Pepper'],
-      base: ['Dry Atlas Cedarwood', 'Mineral Haitian Vetiver', 'Crystalline Ambroxan'],
+      top: ['Pineapple', 'Mandarin', 'Granny Smith Apple'],
+      heart: ['Dry Cedarwood', 'Oakmoss', 'Vanilla'],
+      base: ['Ambroxan', 'Smoky Woods', 'Dry Musk'],
     },
-    longevityLabel: '8–10 Hours on Skin',
-    longevityScore: 84,
-    projectionLabel: 'Crisp Architectural Sillage',
-    projectionScore: 82,
-    sizes: [{ label: '50ml', price: 2500, sku: 'NV-9R-50' }],
-    primaryImage: imgRebel,
-    gallery: [{ src: imgRebel, caption: '9mM Rebel — Matte Noir & Smoked Obsidian Flacon' }],
+    topNotes: ['Pineapple', 'Mandarin', 'Granny Smith Apple'],
+    heartNotes: ['Dry Cedarwood', 'Oakmoss', 'Vanilla'],
+    baseNotes: ['Ambroxan', 'Smoky Woods', 'Dry Musk'],
+    ingredients:
+      'Alcohol Denat., Parfum (Fragrance), Aqua (Water), Limonene, Linalool, Citral, Coumarin.',
+    primaryImage: imgRebelJpg,
+    primaryImageFallback: imgRebelJpg,
+    gallery: [
+      {
+        src: imgRebelJpg,
+        caption: '9mM Rebel · 50ml Matte Noir Flacon',
+      },
+    ],
+    sizes: [{ label: '50ml', ml: 50, price: 2500, sku: 'NV-03-50' }],
     bottle3D: {
       preset: 'noir',
       label: {
-        kicker: 'FRAGRANCE 03 · MODERN AQUATIC',
-        titleLine1: '9PM',
+        kicker: 'FRAGRANCE 03 · EXTRAIT',
+        titleLine1: '9mM',
         titleLine2: 'Rebel',
-        notesLine: 'Bergamot · Marine Accords · Cedarwood',
+        notesLine: 'Pineapple · Bergamot · Cedarwood · Amber',
         concentration: 'EAU DE PARFUM',
         volume: '50 ML',
-        editionCode: 'N° 03 · MARINE',
+        editionCode: 'N° 03 · REBEL',
       },
+    },
+    essencePreset: 'noir',
+    bottleLabel: {
+      kicker: 'FRAGRANCE 03 · EXTRAIT',
+      titleLine1: '9mM',
+      titleLine2: 'Rebel',
+      notesLine: 'Pineapple · Bergamot · Cedarwood · Amber',
+      concentration: 'EAU DE PARFUM',
+      volume: '50 ML',
+      editionCode: 'N° 03 · REBEL',
     },
     reviews: [
       {
-        id: 'rev-9r-1',
-        author: 'Hamza Malik',
-        location: 'Karachi',
+        id: 'rev-301',
+        author: 'Saad A.',
+        location: 'Rawalpindi',
         rating: 5,
-        date: 'October 2026',
-        title: 'An aquatic that actually lasts all day in heat',
+        date: 'Feb 08, 2025',
+        title: 'Instant compliments',
         comment:
-          'Crisp bergamot and marine notes upfront with a super clean cedarwood dry-down that stays noticeable from morning till night.',
+          'That pineapple and smoky wood combo is addictive. Easily one of the strongest performers in my collection.',
       },
     ],
   },
-
-  // =========================================================================
-  // 04 — JADORA
-  // =========================================================================
   {
     id: 'frag-04',
     slug: 'jadora',
     numberCode: '04',
+    editionNumber: 'N° 04',
     name: 'Jadora',
-    subtitle: 'Rich, warm and luxurious.',
+    subtitle: 'Luminous Jasmine, Golden Pear & Warm Sandalwood',
     concentration: 'Extrait de Parfum',
-    family: 'Oud & Amber',
-    collections: ['signature', 'oud', 'womens', 'unisex'],
-    isSignature: true,
-    isBestSeller: true,
+    oilConcentrationPct: 28,
+    family: 'Floral & Musk',
+    gender: 'Feminine-Leaning',
+    collections: ['signature', 'womens', 'oud'],
+    rating: 4.9,
+    reviewCount: 109,
+    keyNotesSummary: 'Pear Blossom · Jasmine Sambac · Damascus Rose · Sandalwood',
     shortDescription:
-      'Opulent aged oud, creamy Mysore sandalwood, golden amber, and roasted exotic spices in a luminous extrait.',
+      'Jadora weaves radiant pear blossom and mandarin into an opulent heart of jasmine sambac, ylang-ylang, and Damascus rose over creamy golden sandalwood.',
+    description:
+      'Jadora weaves radiant pear blossom and mandarin into an opulent heart of jasmine sambac, ylang-ylang, and Damascus rose over creamy golden sandalwood and velvet musk.',
     editorialStory:
-      'Crafted with a 34% pure perfume oil concentration, Jadora wraps buttery aged sandalwood and toasted Ceylon spices around a heart of golden benzoin amber and sweet resinous oud.',
-    keyNotesSummary: 'Oud · Sandalwood · Amber · Spices',
+      'A sunlit floral bouquet balanced with smooth Mysore-style sandalwood and warm golden amber—graceful, polished, and unmistakably celebratory.',
+    longevityLabel: '10 – 12 Hours on Skin',
+    longevityScore: 92,
+    projectionLabel: 'Radiant Floral Sillage',
+    projectionScore: 88,
     pyramid: {
-      top: ['Ceylon Cinnamon Bark', 'Warm Nutmeg', 'Bitter Blood Orange'],
-      heart: ['Creamy Mysore Sandalwood', 'Clove Bud', 'Olibanum Tear'],
-      base: ['Royal Resinous Oud', 'Golden Labdanum Amber', 'Siam Benzoin'],
+      top: ['Pear Blossom', 'Sweet Mandarin', 'Bergamot'],
+      heart: ['Jasmine Sambac', 'Ylang-Ylang', 'Damascus Rose'],
+      base: ['Creamy Sandalwood', 'Golden Amber', 'Velvet Musk'],
     },
-    longevityLabel: '14+ Hours on Skin',
-    longevityScore: 98,
-    projectionLabel: 'Opulent Enveloping Warmth',
-    projectionScore: 91,
-    sizes: [{ label: '50ml', price: 2500, sku: 'NV-JD-50' }],
-    primaryImage: imgJadora,
+    topNotes: ['Pear Blossom', 'Sweet Mandarin', 'Bergamot'],
+    heartNotes: ['Jasmine Sambac', 'Ylang-Ylang', 'Damascus Rose'],
+    baseNotes: ['Creamy Sandalwood', 'Golden Amber', 'Velvet Musk'],
+    ingredients:
+      'Alcohol Denat., Parfum (Fragrance), Aqua (Water), Benzyl Salicylate, Linalool, Hexyl Cinnamal, Citronellol.',
+    primaryImage: imgJadoraJpg,
+    primaryImageFallback: imgJadoraJpg,
     gallery: [
-      { src: imgJadora, caption: 'Jadora — Smoked Champagne Flacon on Nero Marquina Marble' },
+      {
+        src: imgJadoraJpg,
+        caption: 'Jadora · 50ml Champagne Gold Flacon',
+      },
     ],
+    sizes: [{ label: '50ml', ml: 50, price: 2500, sku: 'NV-04-50' }],
     bottle3D: {
       preset: 'champagne',
       label: {
         kicker: 'FRAGRANCE 04 · PURE EXTRAIT',
         titleLine1: 'Jadora',
         titleLine2: 'Parfum',
-        notesLine: 'Oud · Sandalwood · Amber · Spices',
+        notesLine: 'Jasmine · Rose · Sandalwood · Amber',
         concentration: 'EXTRAIT DE PARFUM',
         volume: '50 ML',
-        editionCode: 'N° 04 · AMBER',
+        editionCode: 'N° 04 · GOLD',
       },
+    },
+    essencePreset: 'champagne',
+    bottleLabel: {
+      kicker: 'FRAGRANCE 04 · PURE EXTRAIT',
+      titleLine1: 'Jadora',
+      titleLine2: 'Parfum',
+      notesLine: 'Jasmine · Rose · Sandalwood · Amber',
+      concentration: 'EXTRAIT DE PARFUM',
+      volume: '50 ML',
+      editionCode: 'N° 04 · GOLD',
     },
     reviews: [
       {
-        id: 'rev-jd-1',
-        author: 'Sana Farooq',
-        location: 'Lahore',
+        id: 'rev-401',
+        author: 'Ayesha N.',
+        location: 'Karachi',
         rating: 5,
-        date: 'September 2026',
-        title: 'Pure molten gold for evening events',
+        date: 'Jan 22, 2025',
+        title: 'Pure elegance in a bottle',
         comment:
-          'The sandalwood is impossibly creamy and the spiced amber dry-down radiates luxury without feeling overwhelming.',
+          'Rich floral scent that smells sophisticated and airy at the same time. Gifted a second bottle to my sister.',
       },
     ],
   },
-
-  // =========================================================================
-  // 05 — GUCCI FLORA
-  // =========================================================================
   {
     id: 'frag-05',
     slug: 'gucci-flora',
     numberCode: '05',
+    editionNumber: 'N° 05',
     name: 'Gucci Flora',
-    subtitle: 'Clean, soft and refreshing.',
+    subtitle: 'White Gardenia, Mandarin Blossom & Soft Musk',
     concentration: 'Eau de Parfum',
+    oilConcentrationPct: 24,
     family: 'Floral & Citrus',
-    collections: ['signature', 'fresh', 'womens', 'unisex'],
-    isSignature: true,
+    gender: 'Feminine-Leaning',
+    collections: ['signature', 'womens', 'fresh'],
     isNewArrival: true,
+    rating: 4.8,
+    reviewCount: 87,
+    keyNotesSummary: 'Mandarin Blossom · White Gardenia · Powdery Iris · White Musk',
     shortDescription:
-      'Crystalline white musk, three-year aged Florentine iris pallida, sunlit Sicilian citrus, and pale cashmere wood.',
+      'Gucci Flora opens with sparkling mandarin and red berries, blooming into creamy white gardenia, jasmine, and powdery iris over a comforting trail of cashmere musk.',
+    description:
+      'Gucci Flora opens with sparkling mandarin and red berries, blooming into creamy white gardenia, jasmine, and powdery iris over a comforting trail of cashmere musk and soft patchouli.',
     editorialStory:
-      'Inspired by morning light refracting through clear optical prisms, Gucci Flora opens with sparkling Sicilian citrus and neroli blossom before settling into powdery Florentine orris butter, sheer white musk, and blond cashmere wood.',
-    keyNotesSummary: 'White Musk · Iris · Citrus · Cashmere Wood',
+      'Luminous orchard blossoms layered atop Florentine iris and clean white musk—delivering an airy second-skin elegance that lasts all day.',
+    longevityLabel: '8 – 10 Hours on Skin',
+    longevityScore: 87,
+    projectionLabel: 'Luminous Soft Trail',
+    projectionScore: 84,
     pyramid: {
-      top: ['Sicilian Meyer Lemon', 'White Bergamot', 'Neroli Blossom'],
-      heart: ['Florentine Iris Pallida', 'Steamed White Tea', 'Freesia Petal'],
-      base: ['Sheer White Musk', 'Blond Cashmere Wood', 'Ambrette Seed'],
+      top: ['Pear Blossom', 'Italian Mandarin', 'Red Berries'],
+      heart: ['White Gardenia', 'Jasmine Absolute', 'Powdery Iris'],
+      base: ['White Musk', 'Cashmere Woods', 'Soft Patchouli'],
     },
-    longevityLabel: '8–10 Hours on Skin',
-    longevityScore: 82,
-    projectionLabel: 'Refined Luminous Veil',
-    projectionScore: 72,
-    sizes: [{ label: '50ml', price: 2500, sku: 'NV-GF-50' }],
-    primaryImage: imgGucciFlora,
+    topNotes: ['Pear Blossom', 'Italian Mandarin', 'Red Berries'],
+    heartNotes: ['White Gardenia', 'Jasmine Absolute', 'Powdery Iris'],
+    baseNotes: ['White Musk', 'Cashmere Woods', 'Soft Patchouli'],
+    ingredients:
+      'Alcohol Denat., Parfum (Fragrance), Aqua (Water), Hydroxycitronellal, Limonene, Linalool, Geraniol.',
+    primaryImage: imgGucciFloraJpg,
+    primaryImageFallback: imgGucciFloraJpg,
     gallery: [
-      { src: imgGucciFlora, caption: 'Gucci Flora — Smoked Amethyst & Optical Crystal Flacon' },
+      {
+        src: imgGucciFloraJpg,
+        caption: 'Gucci Flora · 50ml Amethyst Crystal Flacon',
+      },
     ],
+    sizes: [{ label: '50ml', ml: 50, price: 2500, sku: 'NV-05-50' }],
     bottle3D: {
       preset: 'obsidian',
       label: {
-        kicker: 'FRAGRANCE 05 · LUMINOUS IRIS',
+        kicker: 'FRAGRANCE 05 · LUMINOUS FLORAL',
         titleLine1: 'Gucci',
         titleLine2: 'Flora',
-        notesLine: 'White Musk · Iris · Citrus · Cashmere',
+        notesLine: 'Gardenia · Jasmine · Iris · White Musk',
         concentration: 'EAU DE PARFUM',
         volume: '50 ML',
-        editionCode: 'N° 05 · IRIS',
+        editionCode: 'N° 05 · FLORA',
       },
+    },
+    essencePreset: 'obsidian',
+    bottleLabel: {
+      kicker: 'FRAGRANCE 05 · LUMINOUS FLORAL',
+      titleLine1: 'Gucci',
+      titleLine2: 'Flora',
+      notesLine: 'Gardenia · Jasmine · Iris · White Musk',
+      concentration: 'EAU DE PARFUM',
+      volume: '50 ML',
+      editionCode: 'N° 05 · FLORA',
     },
     reviews: [
       {
-        id: 'rev-gf-1',
-        author: 'Hira Daniyal',
-        location: 'Islamabad',
+        id: 'rev-501',
+        author: 'Maham S.',
+        location: 'Lahore',
         rating: 5,
-        date: 'October 2026',
-        title: 'Effortless everyday signature',
+        date: 'Feb 11, 2025',
+        title: 'Soft, floral, and very long lasting',
         comment:
-          'Smells like crisp linen, soft iris, and fresh citrus sunlight. Clean, soft, and refreshing all day.',
+          'Smells fresh and delicate without ever becoming overpowering. Stays on scarves for days.',
       },
     ],
   },
 ];
 
-export interface CollectionMeta {
-  slug: CollectionSlug;
-  title: string;
-  kicker: string;
-  description: string;
-  bannerImage: string;
-}
-
-export const COLLECTIONS_META: Record<CollectionSlug, CollectionMeta> = {
-  signature: {
-    slug: 'signature',
-    title: 'The Signature Five',
-    kicker: 'Haute Parfumerie Wardrobe',
-    description:
-      'All five cornerstone olfactory sculptures—each bottled in 50ml smoked optical silica at PKR 2,500.',
-    bannerImage: imgKhamrah,
-  },
-  mens: {
-    slug: 'mens',
-    title: 'Men’s Fragrances',
-    kicker: 'Architectural Woods, Leather & Marine',
-    description:
-      'Commanding extraits and crisp mineral compositions structured around smoked oud, saddle leather, Calabrian bergamot, and dry Atlas cedarwood.',
-    bannerImage: imgRebel,
-  },
-  womens: {
-    slug: 'womens',
-    title: 'Women’s Fragrances',
-    kicker: 'Luminous Florals, Silk Musk & Golden Amber',
-    description:
-      'Sensual chiaroscuro compositions weaving Grasse rose, Florentine iris pallida, night-blooming jasmine, and spiced Mysore sandalwood.',
-    bannerImage: imgCoolWater,
-  },
-  unisex: {
-    slug: 'unisex',
-    title: 'Unisex Fragrances',
-    kicker: 'Genderless Olfactory Architecture',
-    description:
-      'Every NORVA creation is composed without convention—designed to adapt to skin chemistry with enduring depth and clarity.',
-    bannerImage: imgJadora,
-  },
-  oud: {
-    slug: 'oud',
-    title: 'The Oud Collection',
-    kicker: 'Rare Resins & Dark Agarwood',
-    description:
-      'Sustainably harvested Cambodian and royal agarwood steeped with saffron, leather, sandalwood, and molten labdanum.',
-    bannerImage: imgKhamrah,
-  },
-  fresh: {
-    slug: 'fresh',
-    title: 'The Fresh Collection',
-    kicker: 'Mineral Marine, Citrus & Iris',
-    description:
-      'Sunlit Sicilian citrus, cold Atlantic sea spray, crushed mint, and sheer cashmere wood with extraordinary longevity.',
-    bannerImage: imgGucciFlora,
-  },
-};
-
-export function getProductBySlug(slug?: string): CatalogProduct | undefined {
-  return PRODUCTS.find((p) => p.slug === slug);
+export function formatPKR(amount: number): string {
+  return `PKR ${amount.toLocaleString('en-PK')}`;
 }

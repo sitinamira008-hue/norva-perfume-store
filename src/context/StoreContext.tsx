@@ -269,6 +269,7 @@ interface StoreContextValue {
     newPassword: string,
   ) => Promise<{ ok: boolean; error?: string }>;
   logoutAdmin: () => Promise<void>;
+  ensureAdminSessionChecked: () => Promise<void>;
   refreshAdminOrders: () => Promise<void>;
   updateOrderStatus: (orderNumber: string, status: OrderStatus) => Promise<boolean>;
   updateOrderPaymentStatus: (
@@ -497,7 +498,44 @@ async function postJsonResilient<T = Record<string, any>>(
   return { res: lastRes!, data: lastData };
 }
 
+export interface OverlayStateValue {
+  isCartOpen: boolean;
+  isSearchOpen: boolean;
+  quickViewProduct: CatalogProduct | null;
+  openCart: () => void;
+  closeCart: () => void;
+  openSearch: () => void;
+  closeSearch: () => void;
+  openQuickView: (product: CatalogProduct) => void;
+  closeQuickView: () => void;
+}
+
+export interface HeaderCountsValue {
+  cartCount: number;
+  wishlistCount: number;
+  unseenOrderCount: number;
+  hasAdminSession: boolean;
+}
+
+export interface CatalogActionsValue {
+  addToCart: (
+    product: CatalogProduct,
+    sizeIdx?: number,
+    quantity?: number,
+    openDrawer?: boolean,
+  ) => void;
+  toggleWishlist: (productId: string) => void;
+  openQuickView: (product: CatalogProduct) => void;
+  addSubscriber: (email: string) => void;
+  showToast: (msg: string) => void;
+}
+
 const StoreContext = createContext<StoreContextValue | null>(null);
+const ToastContext = createContext<string | null>(null);
+const OverlayStateContext = createContext<OverlayStateValue | null>(null);
+const HeaderCountsContext = createContext<HeaderCountsValue | null>(null);
+const WishlistSetContext = createContext<ReadonlySet<string>>(new Set());
+const CatalogActionsContext = createContext<CatalogActionsValue | null>(null);
 
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const clientIdRef = useRef<string>(getOrCreateClientId());
@@ -623,10 +661,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return headers;
   }, []);
 
-  // 1. Load live storefront catalog overrides, shipping rates, reviews & persistent wishlist
+  // 1. Load live storefront catalog overrides, shipping rates, reviews & persistent wishlist in ONE request
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/storefront/bootstrap', { credentials: 'include' })
+    const bootstrapUrl = `/api/storefront/bootstrap?clientId=${encodeURIComponent(clientIdRef.current)}`;
+    fetch(bootstrapUrl, { credentials: 'include' })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (cancelled || !data?.ok) return;
@@ -639,15 +678,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (data.reviewsByProduct) {
           setCustomReviews(data.reviewsByProduct);
         }
-      })
-      .catch(() => {});
-
-    fetch(`/api/wishlist/${encodeURIComponent(clientIdRef.current)}`, {
-      credentials: 'include',
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (!cancelled && data?.ok && Array.isArray(data.wishlist) && data.wishlist.length > 0) {
+        if (Array.isArray(data.wishlist) && data.wishlist.length > 0) {
           setWishlist((prev) => Array.from(new Set([...data.wishlist, ...prev])));
         }
       })
@@ -741,53 +772,59 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     [buildAdminHeaders],
   );
 
-  // Verify existing Admin session on boot / refresh
-  useEffect(() => {
-    let cancelled = false;
+  const adminSessionCheckedRef = useRef(false);
+
+  const ensureAdminSessionChecked = useCallback(async () => {
+    if (adminSessionCheckedRef.current) return;
+    adminSessionCheckedRef.current = true;
+    setIsAdminAuthChecking(true);
+
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 4500);
-
-    async function verifySessionOnBoot() {
-      try {
-        const res = await fetch('/api/admin/session', {
-          method: 'GET',
-          credentials: 'include',
-          headers: buildAdminHeaders(adminTokenRef.current),
-          signal: controller.signal,
-        });
-        if (!res.ok) {
-          if (!cancelled) {
-            setAdminSession(null);
-            setAdminToken(null);
-          }
-          return;
-        }
-        const data = await res.json();
-        if (!cancelled && data?.ok && data.session) {
-          setAdminSession(data.session);
-          if (typeof data.unseenCount === 'number') {
-            setUnseenOrderCount(data.unseenCount);
-          }
-          fetchAdminDashboardData(adminTokenRef.current);
-        }
-      } catch {
-        if (!cancelled && !adminTokenRef.current) {
-          setAdminSession(null);
-        }
-      } finally {
-        window.clearTimeout(timeoutId);
-        if (!cancelled) {
-          setIsAdminAuthChecking(false);
-        }
+    try {
+      const res = await fetch('/api/admin/session', {
+        method: 'GET',
+        credentials: 'include',
+        headers: buildAdminHeaders(adminTokenRef.current),
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        setAdminSession(null);
+        setAdminToken(null);
+        return;
       }
-    }
-    verifySessionOnBoot();
-    return () => {
-      cancelled = true;
+      const data = await res.json();
+      if (data?.ok && data.session) {
+        setAdminSession(data.session);
+        if (typeof data.unseenCount === 'number') {
+          setUnseenOrderCount(data.unseenCount);
+        }
+        fetchAdminDashboardData(adminTokenRef.current);
+      }
+    } catch {
+      if (!adminTokenRef.current) {
+        setAdminSession(null);
+      }
+    } finally {
       window.clearTimeout(timeoutId);
-      controller.abort();
-    };
+      setIsAdminAuthChecking(false);
+    }
   }, [buildAdminHeaders, fetchAdminDashboardData]);
+
+  // Verify existing Admin session on boot ONLY if an admin token/cookie exists or user opened /admin directly
+  useEffect(() => {
+    const hasHint =
+      Boolean(adminTokenRef.current) ||
+      (typeof window !== 'undefined' &&
+        (window.location.pathname.startsWith('/admin') ||
+          document.cookie.includes('norva_admin_token')));
+
+    if (hasHint) {
+      ensureAdminSessionChecked();
+    } else {
+      setIsAdminAuthChecking(false);
+    }
+  }, [ensureAdminSessionChecked]);
 
   // 4. Real-Time Authenticated Admin WebSocket + Polling Fallback
   useEffect(() => {
@@ -983,6 +1020,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   }, [productOverrides]);
 
+  const productsRef = useRef<HydratedCatalogProduct[]>([]);
+  productsRef.current = products;
+
   const lowStockProducts = useMemo(
     () => products.filter((p) => !p.inStock || p.stockUnits <= p.lowStockThreshold),
     [products],
@@ -1088,7 +1128,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const addToCart = useCallback(
     (product: CatalogProduct, sizeIdx = 0, quantity = 1, openDrawer = true) => {
-      const liveProd = products.find((p) => p.id === product.id);
+      const liveProd = productsRef.current.find((p) => p.id === product.id);
       const inStock = liveProd ? liveProd.inStock : true;
       const maxStock = liveProd ? liveProd.stockUnits : 48;
 
@@ -1139,7 +1179,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         showToast(`${targetProd.name} (${sizeOpt.label}) added to bag`);
       }
     },
-    [products, showToast],
+    [showToast],
   );
 
   const removeFromCart = useCallback((key: string) => {
@@ -1155,7 +1195,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setCart((prev) =>
         prev.map((item) => {
           if (item.key !== key) return item;
-          const liveProd = products.find((p) => p.id === item.productId);
+          const liveProd = productsRef.current.find((p) => p.id === item.productId);
           const maxStock = liveProd ? Math.max(1, liveProd.stockUnits) : 99;
           if (quantity > maxStock) {
             showToast(`Only ${maxStock} flacon(s) of ${item.name} available in stock`);
@@ -1164,7 +1204,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }),
       );
     },
-    [products, showToast],
+    [showToast],
   );
 
   const clearCart = useCallback(() => {
@@ -1173,7 +1213,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const toggleWishlist = useCallback(
     (productId: string) => {
-      const prod = products.find((p) => p.id === productId);
+      const prod = productsRef.current.find((p) => p.id === productId);
       setWishlist((prev) => {
         const exists = prev.includes(productId);
         if (exists) {
@@ -1191,10 +1231,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         body: JSON.stringify({ productId }),
       }).catch(() => {});
     },
-    [products, showToast],
+    [showToast],
   );
 
-  const isInWishlist = useCallback((productId: string) => wishlist.includes(productId), [wishlist]);
+  const wishlistSet = useMemo<ReadonlySet<string>>(() => new Set(wishlist), [wishlist]);
+  const isInWishlist = useCallback((productId: string) => wishlistSet.has(productId), [wishlistSet]);
 
   const updateProfile = useCallback((partial: Partial<CustomerProfile>) => {
     setProfile((prev) => ({ ...prev, ...partial }));
@@ -1444,7 +1485,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           if (!data && res.status >= 500) {
             return {
               ok: false,
-              error: `Backend authentication server error (HTTP ${res.status}). Check server logs and DATABASE_PATH permissions.`,
+              error: `Backend authentication server error (HTTP ${res.status}). Verify your Vercel database configuration (DATABASE_URL or POSTGRES_URL) and server logs.`,
             };
           }
           return {
@@ -1937,6 +1978,52 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const openQuickView = useCallback((p: CatalogProduct) => setQuickViewProduct(p), []);
   const closeQuickView = useCallback(() => setQuickViewProduct(null), []);
 
+  const overlayValue = useMemo<OverlayStateValue>(
+    () => ({
+      isCartOpen,
+      isSearchOpen,
+      quickViewProduct,
+      openCart,
+      closeCart,
+      openSearch,
+      closeSearch,
+      openQuickView,
+      closeQuickView,
+    }),
+    [
+      isCartOpen,
+      isSearchOpen,
+      quickViewProduct,
+      openCart,
+      closeCart,
+      openSearch,
+      closeSearch,
+      openQuickView,
+      closeQuickView,
+    ],
+  );
+
+  const headerCountsValue = useMemo<HeaderCountsValue>(
+    () => ({
+      cartCount,
+      wishlistCount: wishlist.length,
+      unseenOrderCount,
+      hasAdminSession: Boolean(adminSession),
+    }),
+    [cartCount, wishlist.length, unseenOrderCount, adminSession],
+  );
+
+  const catalogActionsValue = useMemo<CatalogActionsValue>(
+    () => ({
+      addToCart,
+      toggleWishlist,
+      openQuickView,
+      addSubscriber,
+      showToast,
+    }),
+    [addToCart, toggleWishlist, openQuickView, addSubscriber, showToast],
+  );
+
   const value = useMemo<StoreContextValue>(
     () => ({
       products,
@@ -1991,6 +2078,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       activateOrResetAdmin,
       changeAdminPassword,
       logoutAdmin,
+      ensureAdminSessionChecked,
       refreshAdminOrders,
       updateOrderStatus,
       updateOrderPaymentStatus,
@@ -2065,6 +2153,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       activateOrResetAdmin,
       changeAdminPassword,
       logoutAdmin,
+      ensureAdminSessionChecked,
       refreshAdminOrders,
       updateOrderStatus,
       updateOrderPaymentStatus,
@@ -2088,11 +2177,49 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     ],
   );
 
-  return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
+  return (
+    <ToastContext.Provider value={toastMessage}>
+      <OverlayStateContext.Provider value={overlayValue}>
+        <HeaderCountsContext.Provider value={headerCountsValue}>
+          <WishlistSetContext.Provider value={wishlistSet}>
+            <CatalogActionsContext.Provider value={catalogActionsValue}>
+              <StoreContext.Provider value={value}>{children}</StoreContext.Provider>
+            </CatalogActionsContext.Provider>
+          </WishlistSetContext.Provider>
+        </HeaderCountsContext.Provider>
+      </OverlayStateContext.Provider>
+    </ToastContext.Provider>
+  );
 };
 
 export function useStore(): StoreContextValue {
   const ctx = useContext(StoreContext);
   if (!ctx) throw new Error('useStore must be used inside StoreProvider');
+  return ctx;
+}
+
+export function useToastMessage(): string | null {
+  return useContext(ToastContext);
+}
+
+export function useOverlayState(): OverlayStateValue {
+  const ctx = useContext(OverlayStateContext);
+  if (!ctx) throw new Error('useOverlayState must be used inside StoreProvider');
+  return ctx;
+}
+
+export function useHeaderCounts(): HeaderCountsValue {
+  const ctx = useContext(HeaderCountsContext);
+  if (!ctx) throw new Error('useHeaderCounts must be used inside StoreProvider');
+  return ctx;
+}
+
+export function useWishlistSet(): ReadonlySet<string> {
+  return useContext(WishlistSetContext);
+}
+
+export function useCatalogActions(): CatalogActionsValue {
+  const ctx = useContext(CatalogActionsContext);
+  if (!ctx) throw new Error('useCatalogActions must be used inside StoreProvider');
   return ctx;
 }

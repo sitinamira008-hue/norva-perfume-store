@@ -1,98 +1,31 @@
-import React, { useMemo, useState } from 'react';
+import React from 'react';
 import { useLocation } from 'react-router-dom';
-import { ChevronUp, Minus, Plus, X } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
 import { formatPKR } from '../data/products';
-import { CartItem, PlacedOrder, useStore } from '../context/StoreContext';
+import type { PlacedOrder } from '../context/StoreContext';
 
-export const WHATSAPP_DISPLAY = '0301-2697458';
-export const WHATSAPP_WA_NUMBER = '923012697458';
+export const NORVA_WHATSAPP_DISPLAY = '+92 310 7019192';
+export const WHATSAPP_DISPLAY = NORVA_WHATSAPP_DISPLAY;
+const DEFAULT_WHATSAPP_DIGITS = '923107019192';
 
-export const WhatsAppIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
-  <svg
-    viewBox="0 0 24 24"
-    fill="currentColor"
-    aria-hidden="true"
-    className={className}
-  >
-    <path d="M12.031 2c-5.516 0-9.998 4.485-9.998 10.001 0 1.763.459 3.483 1.332 5.001L2 22l5.134-1.346a9.96 9.96 0 0 0 4.894 1.281h.004c5.515 0 9.998-4.485 9.998-10.001 0-2.672-1.04-5.184-2.928-7.073A9.936 9.936 0 0 0 12.031 2Zm5.822 14.127c-.246.693-1.432 1.326-1.976 1.409-.506.076-1.146.108-1.851-.116-.428-.136-.977-.317-1.682-.621-2.959-1.277-4.892-4.258-5.04-4.455-.147-.197-1.203-1.601-1.203-3.054 0-1.453.761-2.167 1.031-2.463.27-.296.59-.37.786-.37.197 0 .393.002.565.01.181.009.424-.069.663.507.246.591.835 2.044.909 2.192.074.148.123.32.025.517-.098.197-.147.32-.295.492-.147.173-.31.386-.442.518-.147.147-.301.307-.129.603.172.295.764 1.26 1.64 2.041 1.127 1.005 2.077 1.316 2.372 1.464.295.148.467.123.639-.074.172-.197.737-.862.934-1.157.196-.296.393-.246.663-.148.27.099 1.72.811 2.015.959.295.148.491.222.565.345.074.123.074.714-.172 1.407Z" />
-  </svg>
-);
-
-export function buildWhatsAppUrl(message: string): string {
-  return `https://wa.me/${WHATSAPP_WA_NUMBER}?text=${encodeURIComponent(message)}`;
+export function getStoreWhatsAppDigits(): string {
+  const envVal = (import.meta as unknown as { env?: Record<string, string | undefined> }).env
+    ?.VITE_WHATSAPP_NUMBER;
+  const cleaned = String(envVal || DEFAULT_WHATSAPP_DIGITS).replace(/\D+/g, '');
+  if (cleaned.startsWith('0') && cleaned.length === 11) {
+    return `92${cleaned.slice(1)}`;
+  }
+  return cleaned || DEFAULT_WHATSAPP_DIGITS;
 }
 
-export function buildOrderConfirmationWhatsAppUrl(order: PlacedOrder): string {
-  const itemLines = order.items.map(
-    (item, idx) =>
-      `${idx + 1}. *${item.name}* (${item.sizeLabel}) × ${item.quantity} — ${formatPKR(
-        item.unitPrice * item.quantity,
-      )}`,
-  );
-
-  const lines: string[] = [
-    'Assalam o Alaikum NORVA!',
-    `Please confirm my order *${order.orderNumber}*:`,
-    '',
-    ...itemLines,
-    '',
-    `Subtotal: ${formatPKR(order.subtotal)}`,
-  ];
-
-  if (order.discountAmount > 0) {
-    lines.push(
-      `Discount${order.couponCode ? ` (${order.couponCode})` : ''}: -${formatPKR(
-        order.discountAmount,
-      )}`,
-    );
-  }
-
-  lines.push(
-    `Shipping (${order.customer.city}): ${
-      order.shippingCost === 0 ? 'Complimentary' : formatPKR(order.shippingCost)
-    }`,
-    `*Total Payable:* ${formatPKR(order.total)}`,
-    `Payment Method: ${
-      order.paymentMethod === 'cod' ? 'Cash on Delivery (COD)' : 'Bank Transfer / IBFT Invoice'
-    }`,
-    '',
-    '*Delivery Details:*',
-    `Name: ${order.customer.fullName}`,
-    `Phone: ${order.customer.phone}`,
-    `Address: ${order.customer.address}, ${order.customer.city}${
-      order.customer.postalCode ? ` ${order.customer.postalCode}` : ''
-    }, ${order.customer.country}`,
-  );
-
-  if (order.giftNote) {
-    lines.push(`Gift Note: "${order.giftNote}"`);
-  }
-
-  return buildWhatsAppUrl(lines.join('\n'));
+export function buildWhatsAppMessageUrl(message: string): string {
+  const digits = getStoreWhatsAppDigits();
+  return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
 }
 
-export function buildCartWhatsAppUrl(cart: CartItem[], subtotal: number): string {
-  const lines = cart.map(
-    (item, idx) =>
-      `${idx + 1}. *${item.name}* (${item.sizeLabel}) × ${item.quantity} — ${formatPKR(
-        item.unitPrice * item.quantity,
-      )}`,
+export function getStoreWhatsAppChatUrl(): string {
+  return buildWhatsAppMessageUrl(
+    'Assalam-o-Alaikum NORVA Concierge! I would like assistance choosing or ordering a fragrance.',
   );
-  const msg = [
-    'Assalam o Alaikum NORVA! 👋',
-    'I would like to place an order on WhatsApp:',
-    '',
-    ...lines,
-    '',
-    `*Subtotal:* ${formatPKR(subtotal)}`,
-    'Payment: Cash on Delivery',
-    '',
-    'My Name: ',
-    'City & Delivery Address: ',
-  ].join('\n');
-
-  return buildWhatsAppUrl(msg);
 }
 
 export function buildProductWhatsAppUrl(
@@ -101,262 +34,116 @@ export function buildProductWhatsAppUrl(
   quantity: number,
   unitPrice: number,
 ): string {
-  const total = unitPrice * quantity;
+  const lineTotal = unitPrice * quantity;
   const msg = [
-    'Assalam o Alaikum NORVA! 👋',
-    'I want to order this fragrance via WhatsApp:',
+    'Assalam-o-Alaikum NORVA Concierge,',
+    'I would like to order:',
+    `• Fragrance: ${productName} (${sizeLabel})`,
+    `• Quantity: ${quantity}`,
+    `• Item Price: ${formatPKR(lineTotal)}`,
     '',
-    `• *Fragrance:* ${productName}`,
-    `• *Size:* ${sizeLabel}`,
-    `• *Quantity:* ${quantity}`,
-    `• *Total:* ${formatPKR(total)}`,
-    '• *Payment:* Cash on Delivery',
-    '',
-    'My Name: ',
-    'City & Delivery Address: ',
+    'Please share delivery details for my city.',
   ].join('\n');
 
-  return buildWhatsAppUrl(msg);
+  return buildWhatsAppMessageUrl(msg);
 }
 
-export const WhatsAppFloatingButton: React.FC = () => {
-  const { pathname } = useLocation();
-  const { products, cart, cartCount, cartSubtotal, isCartOpen } = useStore();
-
-  const [isQuickOpen, setIsQuickOpen] = useState(false);
-  const [selectedProductId, setSelectedProductId] = useState<string>(
-    () => products[0]?.id ?? 'frag-01',
+export function buildProductWhatsAppOrderUrl(params: {
+  productName: string;
+  sizeLabel: string;
+  unitPrice: number;
+  quantity: number;
+}): string {
+  return buildProductWhatsAppUrl(
+    params.productName,
+    params.sizeLabel,
+    params.quantity,
+    params.unitPrice,
   );
-  const [quickQty, setQuickQty] = useState(1);
-  const [customerName, setCustomerName] = useState('');
-  const [customerCity, setCustomerCity] = useState('');
+}
 
-  // Match active product if currently on /product/:slug
-  const currentRouteProduct = useMemo(() => {
-    const match = pathname.match(/^\/product\/([^/]+)/);
-    if (!match) return null;
-    return products.find((p) => p.slug === match[1]) ?? null;
-  }, [pathname, products]);
+export function buildOrderConfirmationWhatsAppUrl(order: PlacedOrder): string {
+  const itemLines = order.items
+    .map(
+      (i) =>
+        `• ${i.name} (${i.sizeLabel}) × ${i.quantity} — ${formatPKR(i.unitPrice * i.quantity)}`,
+    )
+    .join('\n');
 
-  // Smart 1-click WhatsApp URL based on customer's current context
-  const directWhatsAppUrl = useMemo(() => {
-    if (cart.length > 0) {
-      return buildCartWhatsAppUrl(cart, cartSubtotal);
-    }
-    if (currentRouteProduct) {
-      const sz = currentRouteProduct.sizes[0];
-      return buildProductWhatsAppUrl(currentRouteProduct.name, sz.label, 1, sz.price);
-    }
-    return buildWhatsAppUrl(
-      [
-        'Assalam o Alaikum NORVA! 👋',
-        'I would like to order from your 5 Signature Fragrances (50ml · PKR 2,500).',
-        '',
-        'Fragrance Name: ',
-        'My Name: ',
-        'City & Delivery Address: ',
-      ].join('\n'),
+  const lines: string[] = [
+    'Assalam-o-Alaikum NORVA Concierge,',
+    `Please confirm my order *${order.orderNumber}*:`,
+    '',
+    '*Ordered Fragrances:*',
+    itemLines,
+    '',
+    `Subtotal: ${formatPKR(order.subtotal)}`,
+  ];
+
+  if (order.discountAmount > 0) {
+    lines.push(
+      `Discount${order.couponCode ? ` (${order.couponCode})` : ''}: -${formatPKR(order.discountAmount)}`,
     );
-  }, [cart, cartSubtotal, currentRouteProduct]);
+  }
 
-  const quickSelectedProduct =
-    products.find((p) => p.id === selectedProductId) ?? products[0];
+  lines.push(
+    `Shipping (${order.customer.city}): ${order.shippingCost === 0 ? 'Complimentary' : formatPKR(order.shippingCost)}`,
+    `*Total Payable: ${formatPKR(order.total)}*`,
+    `Payment Method: ${order.paymentMethod === 'cod' ? 'Cash on Delivery (COD)' : 'Bank Transfer / IBFT'}`,
+    '',
+    '*Delivery Details:*',
+    `Name: ${order.customer.fullName}`,
+    `Phone: ${order.customer.phone}`,
+    `Address: ${order.customer.address}, ${order.customer.city}${order.customer.postalCode ? ` ${order.customer.postalCode}` : ''}`,
+  );
 
-  const quickOrderUrl = useMemo(() => {
-    if (!quickSelectedProduct) return directWhatsAppUrl;
-    const sz = quickSelectedProduct.sizes[0];
-    const total = sz.price * quickQty;
-    const lines = [
-      'Assalam o Alaikum NORVA! 👋',
-      'I want to place an order on WhatsApp:',
-      '',
-      `• *Fragrance:* ${quickSelectedProduct.name} (${sz.label})`,
-      `• *Quantity:* ${quickQty}`,
-      `• *Total:* ${formatPKR(total)}`,
-      '• *Payment:* Cash on Delivery',
-      '',
-      `My Name: ${customerName.trim() || ''}`,
-      `City & Delivery Address: ${customerCity.trim() || ''}`,
-    ];
-    return buildWhatsAppUrl(lines.join('\n'));
-  }, [quickSelectedProduct, quickQty, customerName, customerCity, directWhatsAppUrl]);
+  if (order.giftNote) {
+    lines.push(`Gift Note: "${order.giftNote}"`);
+  }
 
-  // Hide on Admin Dashboard or while Cart Drawer is open
-  if (pathname.startsWith('/admin') || isCartOpen) {
+  return buildWhatsAppMessageUrl(lines.join('\n'));
+}
+
+export const WhatsAppIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    aria-hidden="true"
+    className={className}
+  >
+    <path d="M12.031 2c-5.516 0-9.969 4.453-9.969 9.968 0 1.758.459 3.474 1.332 4.988L2 22l5.188-1.361a9.927 9.927 0 0 0 4.842 1.258h.004c5.515 0 9.966-4.452 9.966-9.967A9.907 9.907 0 0 0 19.08 4.92 9.906 9.906 0 0 0 12.031 2Zm5.818 14.27c-.246.693-1.432 1.326-1.988 1.409-.508.076-1.15.108-1.856-.116-.428-.136-.978-.317-1.682-.621-2.96-1.278-4.893-4.259-5.041-4.456-.147-.198-1.204-1.602-1.204-3.056 0-1.454.762-2.169 1.032-2.465.271-.296.59-.37.787-.37.196 0 .393.002.565.01.181.009.425-.069.665.507.246.592.836 2.047.909 2.195.074.148.123.321.025.518-.099.198-.148.321-.295.493-.148.173-.311.386-.443.519-.148.148-.302.308-.13.604.172.296.764 1.261 1.641 2.043 1.128 1.005 2.079 1.317 2.374 1.465.295.148.467.123.639-.074.173-.197.738-.863.935-1.159.196-.296.393-.247.664-.148.27.099 1.721.812 2.016.96.295.148.492.222.566.345.073.124.073.715-.173 1.408Z" />
+  </svg>
+);
+
+export const WhatsAppFloatingButton: React.FC = React.memo(() => {
+  const location = useLocation();
+
+  // Hide floating customer WhatsApp button inside private Admin console
+  if (location.pathname.startsWith('/admin')) {
     return null;
   }
 
   return (
-    <div className="fixed bottom-3.5 right-3.5 sm:bottom-5 sm:right-5 z-40 max-w-[calc(100vw-1.75rem)] flex flex-col items-end gap-2.5 sm:gap-3">
-      {/* Optional Quick-Order Popover */}
-      <AnimatePresence>
-        {isQuickOpen && quickSelectedProduct && (
-          <motion.div
-            initial={{ opacity: 0, y: 12, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 12, scale: 0.97 }}
-            transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-            className="w-[calc(100vw-1.75rem)] max-w-[340px] sm:w-[340px] rounded-xl bg-[#09090d] border border-[#25D366]/35 shadow-[0_24px_60px_rgba(0,0,0,0.95),0_10px_30px_rgba(37,211,102,0.18)] overflow-hidden will-change-[opacity,transform]"
-          >
-            {/* Header */}
-            <div className="px-3.5 sm:px-4 py-3 sm:py-3.5 bg-[#0b1610] border-b border-white/[0.08] flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-[#25D366] text-[#050508] flex items-center justify-center shrink-0">
-                  <WhatsAppIcon className="w-4 h-4" />
-                </div>
-                <div>
-                  <p className="text-xs font-semibold text-white leading-tight">
-                    NORVA WhatsApp Order
-                  </p>
-                  <p className="font-mono-tabular text-[11px] text-[#36d67e]">
-                    {WHATSAPP_DISPLAY}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsQuickOpen(false)}
-                aria-label="Close WhatsApp quick order"
-                className="w-9 h-9 -mr-1.5 flex items-center justify-center text-white/50 hover:text-white cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Body */}
-            <div className="p-3.5 sm:p-4 space-y-3 text-xs">
-              <div>
-                <label className="block text-[11px] text-white/55 mb-1">
-                  Select Signature Fragrance
-                </label>
-                <select
-                  value={quickSelectedProduct.id}
-                  onChange={(e) => setSelectedProductId(e.target.value)}
-                  className="w-full h-10 sm:h-9 px-3 rounded-lg bg-[#050508] border border-white/15 text-xs text-white focus:outline-none focus:border-[#25D366]"
-                >
-                  {products.map((p, idx) => (
-                    <option key={p.id} value={p.id} className="bg-[#09090d] text-white">
-                      0{idx + 1}. {p.name} ({p.sizes[0].label}) — {formatPKR(p.sizes[0].price)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-[11px] text-white/55">Quantity (50ml)</span>
-                <div className="h-9 sm:h-8 px-1.5 sm:px-2 rounded-lg bg-[#050508] border border-white/15 flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setQuickQty((q) => Math.max(1, q - 1))}
-                    className="w-8 h-8 sm:w-auto sm:h-auto sm:p-1 flex items-center justify-center text-white/65 hover:text-white cursor-pointer"
-                    aria-label="Decrease quantity"
-                  >
-                    <Minus className="w-3 h-3" />
-                  </button>
-                  <span className="font-mono-tabular text-xs text-white w-4 text-center">
-                    {quickQty}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setQuickQty((q) => q + 1)}
-                    className="w-8 h-8 sm:w-auto sm:h-auto sm:p-1 flex items-center justify-center text-white/65 hover:text-white cursor-pointer"
-                    aria-label="Increase quantity"
-                  >
-                    <Plus className="w-3 h-3" />
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 min-[360px]:grid-cols-2 gap-2">
-                <input
-                  type="text"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder="Your Name (optional)"
-                  className="h-10 sm:h-9 px-2.5 rounded-lg bg-[#050508] border border-white/12 text-xs text-white placeholder:text-white/35 focus:outline-none focus:border-[#25D366]"
-                />
-                <input
-                  type="text"
-                  value={customerCity}
-                  onChange={(e) => setCustomerCity(e.target.value)}
-                  placeholder="City (e.g. Karachi)"
-                  className="h-10 sm:h-9 px-2.5 rounded-lg bg-[#050508] border border-white/12 text-xs text-white placeholder:text-white/35 focus:outline-none focus:border-[#25D366]"
-                />
-              </div>
-
-              <div className="pt-1 flex items-center justify-between text-xs border-t border-white/[0.07]">
-                <span className="text-white/55">Order Total (COD)</span>
-                <span className="font-mono-tabular font-semibold text-[#36d67e]">
-                  {formatPKR(quickSelectedProduct.sizes[0].price * quickQty)}
-                </span>
-              </div>
-
-              <a
-                href={quickOrderUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() => setIsQuickOpen(false)}
-                className="w-full h-10 rounded-lg bg-[#25D366] hover:bg-[#32e275] text-[#050507] text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
-              >
-                <WhatsAppIcon className="w-4 h-4" />
-                <span>Send Order on WhatsApp</span>
-              </a>
-
-              {cart.length > 0 && (
-                <a
-                  href={directWhatsAppUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={() => setIsQuickOpen(false)}
-                  className="w-full h-10 sm:h-9 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] border border-white/12 text-white text-[11px] font-medium flex items-center justify-center gap-1.5 transition-colors px-2"
-                >
-                  <span className="truncate">
-                    Order Current Bag ({cartCount} {cartCount === 1 ? 'item' : 'items'} ·{' '}
-                    {formatPKR(cartSubtotal)})
-                  </span>
-                </a>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Main Floating Bar: 1-Click Direct WhatsApp Link + Quick-Picker Toggle */}
-      <div className="flex items-stretch rounded-xl bg-[#0b0b11]/98 border border-[#25D366]/45 hover:border-[#25D366] shadow-[0_18px_44px_-8px_rgba(0,0,0,0.95),0_8px_28px_-8px_rgba(37,211,102,0.28)] overflow-hidden smooth-lift hover:-translate-y-0.5 max-w-full">
-        <a
-          href={directWhatsAppUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={`Order on WhatsApp ${WHATSAPP_DISPLAY}`}
-          className="flex items-center gap-2.5 sm:gap-3 pl-2.5 pr-2.5 py-2 sm:pl-3 sm:pr-3.5 sm:py-2.5 group min-w-0"
-        >
-          <span className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-[#25D366] group-hover:bg-[#32e275] text-[#050507] flex items-center justify-center shrink-0 transition-colors">
-            <WhatsAppIcon className="w-4 h-4 sm:w-5 sm:h-5" />
-          </span>
-          <span className="flex flex-col text-left leading-tight min-w-0">
-            <span className="text-[11.5px] sm:text-xs font-semibold text-white group-hover:text-[#36d67e] transition-colors whitespace-nowrap">
-              {cartCount > 0 ? `WhatsApp Bag (${cartCount})` : 'Order on WhatsApp'}
-            </span>
-            <span className="font-mono-tabular text-[10.5px] sm:text-[11px] text-white/65 whitespace-nowrap">
-              {WHATSAPP_DISPLAY}
-            </span>
-          </span>
-        </a>
-
-        <button
-          type="button"
-          onClick={() => setIsQuickOpen((prev) => !prev)}
-          title="Quick-select fragrance for WhatsApp order"
-          aria-label="Toggle WhatsApp quick fragrance selector"
-          className="min-w-[40px] sm:min-w-0 px-2.5 border-l border-white/10 text-white/60 hover:text-white hover:bg-white/[0.05] flex items-center justify-center transition-colors cursor-pointer shrink-0"
-        >
-          <ChevronUp
-            className={`w-4 h-4 transition-transform duration-200 ${
-              isQuickOpen ? 'rotate-180 text-[#25D366]' : ''
-            }`}
-          />
-        </button>
-      </div>
-    </div>
+    <a
+      href={getStoreWhatsAppChatUrl()}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`Chat with NORVA on WhatsApp (${NORVA_WHATSAPP_DISPLAY})`}
+      title={`WhatsApp Concierge · ${NORVA_WHATSAPP_DISPLAY}`}
+      className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-40 group inline-flex items-center gap-2.5 h-12 sm:h-[52px] pl-3.5 pr-4 sm:pl-4 sm:pr-5 rounded-full bg-[#112419] hover:bg-[#163021] border border-[#25D366]/55 text-white transition-colors"
+    >
+      <span className="w-7 h-7 rounded-full bg-[#25D366] text-[#050508] flex items-center justify-center shrink-0">
+        <WhatsAppIcon className="w-4 h-4" />
+      </span>
+      <span className="flex flex-col text-left leading-tight">
+        <span className="text-[9.5px] uppercase tracking-[0.16em] text-[#36d67e] font-semibold">
+          WhatsApp
+        </span>
+        <span className="text-xs font-medium text-white whitespace-nowrap">
+          Order / Help
+        </span>
+      </span>
+    </a>
   );
-};
+});
+WhatsAppFloatingButton.displayName = 'WhatsAppFloatingButton';

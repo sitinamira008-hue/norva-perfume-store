@@ -9,19 +9,15 @@ import {
 import {
   BottleLabelContent,
   DEFAULT_HERO_BOTTLE_LABEL,
+  EssencePresetId,
+} from './bottleTypes';
+import {
   createRadialGlowTexture,
   drawPlaqueTypographyToCanvas,
 } from './labelTexture';
 import { SpringState, stepSpring } from './mathAndCells';
 
-export type EssencePresetId =
-  | 'violet'
-  | 'emerald'
-  | 'amber'
-  | 'obsidian'
-  | 'champagne'
-  | 'cobalt'
-  | 'noir';
+export type { EssencePresetId };
 
 export interface StudioParams {
   iridescence: number;
@@ -207,6 +203,7 @@ export class FacetBottleScene {
   private elapsedTime = 0;
   private lastRaycastTime = -1;
   private lastTimestamp = 0;
+  private idleActiveBudgetSec = 2.6;
   private frameId = 0;
   private resizeRafId = 0;
   private loopActive = false;
@@ -282,9 +279,12 @@ export class FacetBottleScene {
     }
 
     this.bindEvents();
-    this.startLoop();
+    this.wakeUp(2.4);
 
-    if (options.preloadSignaturePresets && !this.isSoftwareGl && !this.isMobileDevice) {
+    // Only prewarm extra bottles if explicitly requested AND on high-core desktop hardware
+    const highCoreDesktop =
+      typeof navigator !== 'undefined' && (navigator.hardwareConcurrency || 0) >= 8;
+    if (options.preloadSignaturePresets && highCoreDesktop && !this.isSoftwareGl && !this.isMobileDevice) {
       this.scheduleIdlePrewarm();
     }
   }
@@ -385,8 +385,13 @@ export class FacetBottleScene {
     if (this.externallyPaused === paused) return;
     this.externallyPaused = paused;
     if (!paused) {
-      this.startLoop();
+      this.wakeUp(2.0);
     }
+  }
+
+  private wakeUp(durationSec = 2.2): void {
+    this.idleActiveBudgetSec = Math.max(this.idleActiveBudgetSec, durationSec);
+    this.startLoop();
   }
 
   private startLoop(): void {
@@ -398,6 +403,9 @@ export class FacetBottleScene {
       this.externallyPaused
     ) {
       return;
+    }
+    if (this.idleActiveBudgetSec <= 0 && !this.studioParams.autoSpin && !this.isDragging && !this.pointerInside) {
+      this.idleActiveBudgetSec = 0.6;
     }
     this.loopActive = true;
     this.lastTimestamp = performance.now();
@@ -815,7 +823,7 @@ export class FacetBottleScene {
           if (!entry) return;
           this.inViewport = entry.isIntersecting;
           if (this.inViewport) {
-            this.startLoop();
+            this.wakeUp(1.5);
           }
         },
         { threshold: 0.02 },
@@ -834,6 +842,7 @@ export class FacetBottleScene {
     this.dragPrevX = e.clientX;
     this.dragMovedPx = 0;
     this.syncCursorStyle();
+    this.wakeUp(2.5);
   };
 
   private onPointerUp = (): void => {
@@ -842,6 +851,7 @@ export class FacetBottleScene {
     }
     this.isDragging = false;
     this.syncCursorStyle();
+    this.wakeUp(1.8);
   };
 
   private onPointerMove = (e: PointerEvent): void => {
@@ -864,6 +874,7 @@ export class FacetBottleScene {
       this.orbitYawVel = dx * 0.0085;
       this.orbitYaw += dx * 0.0072;
     }
+    this.wakeUp(1.6);
   };
 
   private onPointerLeave = (): void => {
@@ -872,6 +883,7 @@ export class FacetBottleScene {
     this.isDragging = false;
     this.hoveredPart = null;
     this.syncCursorStyle();
+    this.wakeUp(1.4);
   };
 
   public shatterBottle(): void {
@@ -879,6 +891,7 @@ export class FacetBottleScene {
     this.isExploded = true;
     this.hoveredPart = null;
     this.syncCursorStyle();
+    this.wakeUp(2.6);
     this.onPhaseChange?.(true, null);
   }
 
@@ -886,6 +899,7 @@ export class FacetBottleScene {
     if (!this.isExploded) return;
     this.isExploded = false;
     this.syncCursorStyle();
+    this.wakeUp(2.6);
     this.onPhaseChange?.(false, null);
   }
 
@@ -912,6 +926,7 @@ export class FacetBottleScene {
     } else if (this.currentAssembly) {
       this.ensureBottleAssembly();
     }
+    this.wakeUp(2.6);
   }
 
   public updateStudioParams(partial: Partial<StudioParams>): void {
@@ -921,11 +936,13 @@ export class FacetBottleScene {
       this.ensureBottleAssembly();
       this.applyPresetPalette(false);
     }
+    this.wakeUp(2.2);
   }
 
   public resetOrbit(): void {
     this.orbitYaw = 0;
     this.orbitYawVel = 0;
+    this.wakeUp(1.8);
   }
 
   private performRaycast(): void {
@@ -1142,6 +1159,22 @@ export class FacetBottleScene {
 
     this.stepAnimation(dt);
     this.renderer.render(this.scene, this.camera);
+
+    const activelyInteracting =
+      this.studioParams.autoSpin ||
+      this.isDragging ||
+      this.pointerInside ||
+      Math.abs(this.orbitYawVel) > 0.0005;
+
+    if (activelyInteracting) {
+      this.idleActiveBudgetSec = Math.max(this.idleActiveBudgetSec, 1.4);
+    } else {
+      this.idleActiveBudgetSec -= dt;
+      if (this.idleActiveBudgetSec <= 0) {
+        this.loopActive = false;
+        return;
+      }
+    }
 
     if (this.isSoftwareGl) {
       this.afterDraw(this.tick);

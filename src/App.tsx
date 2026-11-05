@@ -1,18 +1,11 @@
-import React, { Suspense, lazy, useEffect } from 'react';
-import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { motion } from 'motion/react';
-import { StoreProvider, useStore } from './context/StoreContext';
-import { Navbar, Footer } from './components/NavbarAndFooter';
-import {
-  CartDrawer,
-  QuickViewModal,
-  SearchModal,
-  ToastNotification,
-} from './components/CartAndModals';
+import React, { Suspense, lazy, useEffect, useState } from 'react';
+import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { StoreProvider, useOverlayState } from './context/StoreContext';
+import { Footer, Navbar } from './components/NavbarAndFooter';
+import { ToastNotification } from './components/LuxuryUI';
 import { WhatsAppFloatingButton } from './components/WhatsAppFloatingButton';
 import { HomePage } from './pages/HomePage';
 
-// Code-split secondary routes so initial load on mobile & PC stays ultra-fast
 const ShopAllPage = lazy(() =>
   import('./pages/ShopAllPage').then((m) => ({ default: m.ShopAllPage })),
 );
@@ -28,99 +21,105 @@ const ContactPage = lazy(() =>
 const CheckoutPage = lazy(() =>
   import('./pages/CheckoutAndAccountPages').then((m) => ({ default: m.CheckoutPage })),
 );
-const AccountPage = lazy(() =>
-  import('./pages/CheckoutAndAccountPages').then((m) => ({ default: m.AccountPage })),
-);
 const TrackOrderPage = lazy(() =>
   import('./pages/CheckoutAndAccountPages').then((m) => ({ default: m.TrackOrderPage })),
+);
+const AccountPage = lazy(() =>
+  import('./pages/CheckoutAndAccountPages').then((m) => ({ default: m.AccountPage })),
 );
 const AdminDashboardPage = lazy(() =>
   import('./pages/AdminDashboardPage').then((m) => ({ default: m.AdminDashboardPage })),
 );
 
-const RouteLoadingFallback: React.FC = () => (
-  <div className="min-h-[60vh] flex items-center justify-center px-4">
-    <div className="text-center space-y-2 opacity-75">
-      <p className="font-serif-display text-2xl tracking-[0.14em] text-[#d6be96]">NORVA</p>
-      <div className="w-24 h-0.5 bg-white/10 rounded-full overflow-hidden mx-auto">
-        <div className="w-1/2 h-full bg-[#d6be96] animate-pulse" />
-      </div>
+const LazyCartDrawer = lazy(() =>
+  import('./components/CartAndModals').then((m) => ({ default: m.CartDrawer })),
+);
+const LazyQuickViewModal = lazy(() =>
+  import('./components/CartAndModals').then((m) => ({ default: m.QuickViewModal })),
+);
+const LazySearchModal = lazy(() =>
+  import('./components/CartAndModals').then((m) => ({ default: m.SearchModal })),
+);
+
+const ScrollToTopOnRoute: React.FC = () => {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [pathname]);
+  return null;
+};
+
+const PageLoaderFallback: React.FC = () => (
+  <div className="min-h-[65vh] flex items-center justify-center bg-[#050508]">
+    <div className="flex flex-col items-center gap-3">
+      <div className="w-7 h-7 rounded-full border-2 border-[#d6be96]/30 border-t-[#d6be96] animate-spin" />
+      <span className="text-[11px] uppercase tracking-[0.24em] text-white/45">NORVA</span>
     </div>
   </div>
 );
 
-const ScrollAndShortcuts: React.FC = () => {
-  const { pathname } = useLocation();
-  const { openSearch } = useStore();
+/**
+ * Mounts interactive drawers/modals on demand so CartAndModals & QuickView's 3D stage
+ * are never evaluated or downloaded until first opened.
+ */
+const DeferredStoreOverlays: React.FC = () => {
+  const { isCartOpen, isSearchOpen, quickViewProduct } = useOverlayState();
+  const [hasOpenedCart, setHasOpenedCart] = useState(false);
+  const [hasOpenedSearch, setHasOpenedSearch] = useState(false);
+  const [hasOpenedQuickView, setHasOpenedQuickView] = useState(false);
 
   useEffect(() => {
-    window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
-  }, [pathname]);
+    if (isCartOpen) setHasOpenedCart(true);
+  }, [isCartOpen]);
 
   useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        openSearch();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [openSearch]);
+    if (isSearchOpen) setHasOpenedSearch(true);
+  }, [isSearchOpen]);
 
-  return null;
-};
-
-const AnimatedRoutes: React.FC = () => {
-  const location = useLocation();
+  useEffect(() => {
+    if (quickViewProduct) setHasOpenedQuickView(true);
+  }, [quickViewProduct]);
 
   return (
-    <Suspense fallback={<RouteLoadingFallback />}>
-      <motion.div
-        key={location.pathname}
-        initial={{ opacity: 0, y: 6 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-        className="will-change-[opacity,transform]"
-      >
-        <Routes location={location}>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/shop" element={<ShopAllPage />} />
-          <Route path="/collections/:collectionId" element={<CollectionPage />} />
-          <Route path="/product/:slug" element={<ProductDetailPage />} />
-          <Route path="/contact" element={<ContactPage />} />
-          <Route path="/checkout" element={<CheckoutPage />} />
-          <Route path="/track-order" element={<TrackOrderPage />} />
-          <Route path="/account" element={<AccountPage />} />
-          <Route path="/admin" element={<AdminDashboardPage />} />
-          <Route path="/admin/*" element={<AdminDashboardPage />} />
-          <Route path="/login" element={<AdminDashboardPage />} />
-          <Route path="/admin-login" element={<AdminDashboardPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </motion.div>
+    <Suspense fallback={null}>
+      {(isCartOpen || hasOpenedCart) && <LazyCartDrawer />}
+      {(Boolean(quickViewProduct) || hasOpenedQuickView) && <LazyQuickViewModal />}
+      {(isSearchOpen || hasOpenedSearch) && <LazySearchModal />}
     </Suspense>
   );
 };
 
-export default function App() {
+const StorefrontRoutes: React.FC = () => {
+  return (
+    <Suspense fallback={<PageLoaderFallback />}>
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/shop" element={<ShopAllPage />} />
+        <Route path="/collections/:collectionId" element={<CollectionPage />} />
+        <Route path="/product/:slug" element={<ProductDetailPage />} />
+        <Route path="/contact" element={<ContactPage />} />
+        <Route path="/checkout" element={<CheckoutPage />} />
+        <Route path="/track-order" element={<TrackOrderPage />} />
+        <Route path="/account" element={<AccountPage />} />
+        <Route path="/admin" element={<AdminDashboardPage />} />
+        <Route path="*" element={<HomePage />} />
+      </Routes>
+    </Suspense>
+  );
+};
+
+export function App() {
   return (
     <BrowserRouter>
       <StoreProvider>
-        <ScrollAndShortcuts />
-        <div className="min-h-screen w-full overflow-x-clip flex flex-col bg-transparent text-[#f5f3ef] font-sans-body">
+        <ScrollToTopOnRoute />
+        <div className="min-h-screen flex flex-col bg-[#050508] text-[#f5f3ef]">
           <Navbar />
-
-          <main className="flex-1 min-w-0">
-            <AnimatedRoutes />
+          <main className="flex-1">
+            <StorefrontRoutes />
           </main>
-
           <Footer />
-
-          {/* Global Shopping & Discovery Overlays */}
-          <CartDrawer />
-          <QuickViewModal />
-          <SearchModal />
+          <DeferredStoreOverlays />
           <WhatsAppFloatingButton />
           <ToastNotification />
         </div>
@@ -128,3 +127,5 @@ export default function App() {
     </BrowserRouter>
   );
 }
+
+export default App;

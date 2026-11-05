@@ -17,11 +17,18 @@ const ALL_COLLECTION_SLUGS: CollectionSlug[] = [
   'fresh',
 ];
 
+const SLUG_ALIAS_MAP: Record<string, CollectionSlug> = {
+  'best-sellers': 'signature',
+  'oud-dark-woods': 'oud',
+  'fresh-luminous': 'fresh',
+};
+
 export const CollectionPage: React.FC = () => {
   const { products } = useStore();
   const { collectionId } = useParams<{ collectionId: string }>();
-  const validSlug: CollectionSlug = ALL_COLLECTION_SLUGS.includes(collectionId as CollectionSlug)
-    ? (collectionId as CollectionSlug)
+  const resolvedParam = (collectionId && SLUG_ALIAS_MAP[collectionId]) || collectionId;
+  const validSlug: CollectionSlug = ALL_COLLECTION_SLUGS.includes(resolvedParam as CollectionSlug)
+    ? (resolvedParam as CollectionSlug)
     : 'signature';
 
   const meta = COLLECTIONS_META[validSlug];

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useDeferredValue, useMemo, useState } from 'react';
 import { RotateCcw, Search, SlidersHorizontal } from 'lucide-react';
 import { FragranceFamily, formatPKR } from '../data/products';
 import { useStore } from '../context/StoreContext';
@@ -31,10 +31,13 @@ export const ShopAllPage: React.FC = () => {
   const [maxPrice, setMaxPrice] = useState<number>(10000);
   const [sortBy, setSortBy] = useState<SortOption>('featured');
 
+  const deferredSearch = useDeferredValue(searchQuery);
+  const deferredMaxPrice = useDeferredValue(maxPrice);
+
   const getRepresentativePrice = (p: (typeof products)[number]) => p.sizes[0].price;
 
   const filteredProducts = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
+    const q = deferredSearch.trim().toLowerCase();
 
     const list = products.filter((p) => {
       if (activeCategory === 'bestsellers' && !p.isBestSeller) return false;
@@ -45,7 +48,7 @@ export const ShopAllPage: React.FC = () => {
       if (selectedFamily !== 'All' && p.family !== selectedFamily) return false;
 
       const repPrice = getRepresentativePrice(p);
-      if (repPrice > maxPrice) return false;
+      if (repPrice > deferredMaxPrice) return false;
 
       if (q) {
         const hay = `${p.name} ${p.subtitle} ${p.keyNotesSummary} ${p.family} ${p.concentration} ${p.pyramid.top.join(' ')} ${p.pyramid.heart.join(' ')} ${p.pyramid.base.join(' ')}`.toLowerCase();
@@ -62,7 +65,7 @@ export const ShopAllPage: React.FC = () => {
       return [...list].sort((a, b) => b.name.localeCompare(a.name));
     }
     return list;
-  }, [products, activeCategory, selectedFamily, maxPrice, searchQuery, sortBy]);
+  }, [products, activeCategory, selectedFamily, deferredMaxPrice, deferredSearch, sortBy]);
 
   const resetFilters = () => {
     setSearchQuery('');

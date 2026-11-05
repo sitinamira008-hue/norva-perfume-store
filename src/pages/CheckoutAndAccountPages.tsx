@@ -108,13 +108,13 @@ export const CheckoutPage: React.FC = () => {
   const cityInputRef = useRef<HTMLInputElement | null>(null);
   const errorBannerRef = useRef<HTMLDivElement | null>(null);
 
-  // Keep proxy auth token cache warm while customer fills out checkout form
+  // Keep proxy auth token cache warm while customer fills out checkout form (zero extra mount request)
   useEffect(() => {
-    const ping = () => {
-      fetch('/api/health', { credentials: 'include' }).catch(() => {});
-    };
-    ping();
-    const timer = window.setInterval(ping, 45000);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetch('/api/health', { credentials: 'include' }).catch(() => {});
+      }
+    }, 55000);
     return () => window.clearInterval(timer);
   }, []);
 

@@ -1,234 +1,231 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { RotateCw, Sparkles } from 'lucide-react';
-import { EssencePresetId, FacetBottleScene } from '../webgl/FacetBottleScene';
-import { BottleLabelContent } from '../webgl/labelTexture';
+import { Sparkles } from 'lucide-react';
+import type { BottleLabelContent, EssencePresetId } from '../webgl/bottleTypes';
+import type { FacetBottleScene } from '../webgl/FacetBottleScene';
+import { getDevicePerformanceProfile, probeWebGLCapability } from '../utils/devicePerformance';
+import { LuxuryImage } from './LuxuryUI';
 
 interface ThreeBottleStageProps {
-  label: BottleLabelContent;
   preset: EssencePresetId;
+  label: BottleLabelContent;
   fallbackImage?: string;
-  className?: string;
-  showControls?: boolean;
+  autoSpin?: boolean;
+  centered?: boolean;
+  interactiveControls?: boolean;
   preloadSignaturePresets?: boolean;
   paused?: boolean;
-}
-
-const STAGE_PERFUME_SHADOW_BY_PRESET: Record<
-  EssencePresetId,
-  {
-    ambientMist: string;
-    floorPlinthGlow: string;
-  }
-> = {
-  amber: {
-    ambientMist:
-      'bg-[radial-gradient(ellipse_62%_56%_at_50%_46%,rgba(238,144,42,0.25),rgba(156,72,14,0.12)_48%,transparent_76%)]',
-    floorPlinthGlow:
-      'bg-[radial-gradient(ellipse_54%_22%_at_50%_84%,rgba(248,162,56,0.34),rgba(128,54,8,0.14)_54%,transparent_80%)]',
-  },
-  cobalt: {
-    ambientMist:
-      'bg-[radial-gradient(ellipse_62%_56%_at_50%_46%,rgba(42,162,232,0.24),rgba(72,204,182,0.11)_48%,transparent_76%)]',
-    floorPlinthGlow:
-      'bg-[radial-gradient(ellipse_54%_22%_at_50%_84%,rgba(68,194,242,0.34),rgba(34,132,168,0.14)_54%,transparent_80%)]',
-  },
-  noir: {
-    ambientMist:
-      'bg-[radial-gradient(ellipse_62%_56%_at_50%_46%,rgba(168,182,218,0.19),rgba(78,88,118,0.11)_48%,transparent_76%)]',
-    floorPlinthGlow:
-      'bg-[radial-gradient(ellipse_54%_22%_at_50%_84%,rgba(196,208,240,0.26),rgba(72,82,110,0.12)_54%,transparent_80%)]',
-  },
-  champagne: {
-    ambientMist:
-      'bg-[radial-gradient(ellipse_62%_56%_at_50%_46%,rgba(248,186,62,0.25),rgba(176,108,22,0.12)_48%,transparent_76%)]',
-    floorPlinthGlow:
-      'bg-[radial-gradient(ellipse_54%_22%_at_50%_84%,rgba(255,198,78,0.35),rgba(168,104,18,0.14)_54%,transparent_80%)]',
-  },
-  obsidian: {
-    ambientMist:
-      'bg-[radial-gradient(ellipse_62%_56%_at_50%_46%,rgba(184,116,252,0.25),rgba(104,48,178,0.12)_48%,transparent_76%)]',
-    floorPlinthGlow:
-      'bg-[radial-gradient(ellipse_54%_22%_at_50%_84%,rgba(198,136,255,0.34),rgba(98,42,168,0.14)_54%,transparent_80%)]',
-  },
-  violet: {
-    ambientMist:
-      'bg-[radial-gradient(ellipse_62%_56%_at_50%_46%,rgba(174,116,246,0.23),rgba(96,48,162,0.11)_48%,transparent_76%)]',
-    floorPlinthGlow:
-      'bg-[radial-gradient(ellipse_54%_22%_at_50%_84%,rgba(186,128,252,0.32),rgba(88,42,152,0.13)_54%,transparent_80%)]',
-  },
-  emerald: {
-    ambientMist:
-      'bg-[radial-gradient(ellipse_62%_56%_at_50%_46%,rgba(54,196,174,0.23),rgba(24,116,102,0.11)_48%,transparent_76%)]',
-    floorPlinthGlow:
-      'bg-[radial-gradient(ellipse_54%_22%_at_50%_84%,rgba(74,218,194,0.32),rgba(24,112,98,0.13)_54%,transparent_80%)]',
-  },
-};
-
-function canUseWebGL(): boolean {
-  if (typeof window === 'undefined') return false;
-  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return false;
-  try {
-    const c = document.createElement('canvas');
-    const gl = c.getContext('webgl2') || c.getContext('webgl');
-    if (!gl) return false;
-    gl.getExtension('WEBGL_lose_context')?.loseContext();
-    return true;
-  } catch {
-    return false;
-  }
+  className?: string;
+  priorityImage?: boolean;
 }
 
 export const ThreeBottleStage: React.FC<ThreeBottleStageProps> = React.memo(
   ({
-    label,
     preset,
+    label,
     fallbackImage,
-    className = 'w-full h-[540px] lg:h-[680px]',
-    showControls = true,
+    autoSpin = false,
+    centered = true,
+    interactiveControls = false,
     preloadSignaturePresets = false,
     paused = false,
+    className = '',
+    priorityImage = false,
   }) => {
-    const mountRef = useRef<HTMLDivElement | null>(null);
+    const containerRef = useRef<HTMLDivElement | null>(null);
     const sceneRef = useRef<FacetBottleScene | null>(null);
-    const [supported, setSupported] = useState<boolean>(() => canUseWebGL());
-    const [autoSpin, setAutoSpin] = useState(false);
-    const [isExploded, setIsExploded] = useState(false);
 
+    const [perfProfile] = useState(() => getDevicePerformanceProfile());
+    const [manual3DRequested, setManual3DRequested] = useState(false);
+    const [inView, setInView] = useState(false);
+    const [sceneReady, setSceneReady] = useState(false);
+    const [webglFailed, setWebglFailed] = useState(false);
+    const [isExploded, setIsExploded] = useState(false);
+    const [spinning, setSpinning] = useState(autoSpin);
+
+    const shouldEnableWebGL =
+      !webglFailed && (perfProfile.canUseHeavyWebGL || manual3DRequested);
+
+    // Observe viewport visibility so Three.js is never downloaded or initialized off-screen
     useEffect(() => {
-      if (!supported || !mountRef.current) return;
-      let instance: FacetBottleScene | null = null;
-      try {
-        instance = new FacetBottleScene(mountRef.current, {
-          centered: true,
-          initialLabel: label,
-          initialPreset: preset,
-          autoSpin: false,
-          preloadSignaturePresets,
-          onPhaseChange: (exploded) => {
-            setIsExploded(exploded);
-          },
-        });
-        sceneRef.current = instance;
-      } catch {
-        setSupported(false);
+      if (!shouldEnableWebGL) return;
+      const el = containerRef.current;
+      if (!el) return;
+
+      if (typeof IntersectionObserver === 'undefined') {
+        setInView(true);
+        return;
+      }
+
+      const observer = new IntersectionObserver(
+        (entries) => {
+          if (entries[0]?.isIntersecting) {
+            setInView(true);
+            observer.disconnect();
+          }
+        },
+        { rootMargin: '160px' },
+      );
+      observer.observe(el);
+      return () => observer.disconnect();
+    }, [shouldEnableWebGL]);
+
+    // Dynamically import FacetBottleScene + Three.js in an async chunk during idle time
+    useEffect(() => {
+      if (!shouldEnableWebGL || !inView) return;
+      const el = containerRef.current;
+      if (!el) return;
+
+      let cancelled = false;
+      let idleHandle: number | null = null;
+      let timeoutHandle: number | null = null;
+
+      const bootScene = async () => {
+        try {
+          const mod = await import('../webgl/FacetBottleScene');
+          if (cancelled || !containerRef.current) return;
+
+          const scene = new mod.FacetBottleScene(containerRef.current, {
+            centered,
+            autoSpin: spinning,
+            initialPreset: preset,
+            initialLabel: label,
+            preloadSignaturePresets,
+            onPhaseChange: (exploded) => {
+              if (!cancelled) setIsExploded(exploded);
+            },
+          });
+          scene.setPaused(paused);
+          sceneRef.current = scene;
+          if (!cancelled) {
+            setSceneReady(true);
+          }
+        } catch {
+          if (!cancelled) {
+            setWebglFailed(true);
+            setSceneReady(false);
+          }
+        }
+      };
+
+      const win = window as Window & {
+        requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+        cancelIdleCallback?: (id: number) => void;
+      };
+
+      if (manual3DRequested) {
+        bootScene();
+      } else if (typeof win.requestIdleCallback === 'function') {
+        idleHandle = win.requestIdleCallback(() => bootScene(), { timeout: 900 });
+      } else {
+        timeoutHandle = window.setTimeout(() => bootScene(), 140);
       }
 
       return () => {
-        instance?.dispose();
+        cancelled = true;
+        if (idleHandle !== null && typeof win.cancelIdleCallback === 'function') {
+          win.cancelIdleCallback(idleHandle);
+        }
+        if (timeoutHandle !== null) {
+          window.clearTimeout(timeoutHandle);
+        }
+        sceneRef.current?.dispose();
         sceneRef.current = null;
+        setSceneReady(false);
       };
-    }, [supported]);
+    }, [shouldEnableWebGL, inView, centered, preloadSignaturePresets, manual3DRequested]);
 
     useEffect(() => {
       sceneRef.current?.setPaused(paused);
     }, [paused]);
 
-    // Instant cached swap of bespoke 3D bottle silhouette, materials & perfumed shadow
     useEffect(() => {
-      if (sceneRef.current) {
-        sceneRef.current.setBottleIdentity(label, preset);
-        setIsExploded(false);
-      }
-    }, [
-      label.titleLine1,
-      label.titleLine2,
-      label.notesLine,
-      label.concentration,
-      label.volume,
-      label.editionCode,
-      preset,
-    ]);
+      if (!sceneRef.current) return;
+      sceneRef.current.setBottleIdentity(label, preset);
+    }, [preset, label]);
 
-    const toggleSpin = () => {
-      const next = !autoSpin;
-      setAutoSpin(next);
-      sceneRef.current?.updateStudioParams({ autoSpin: next });
-    };
+    useEffect(() => {
+      setSpinning(autoSpin);
+      sceneRef.current?.updateStudioParams({ autoSpin });
+    }, [autoSpin]);
 
-    const toggleExplode = () => {
+    const handleToggleExplode = () => {
       if (!sceneRef.current) return;
       if (isExploded) {
         sceneRef.current.reassembleBottle();
-        setIsExploded(false);
       } else {
         sceneRef.current.shatterBottle();
-        setIsExploded(true);
       }
     };
 
-    if (!supported) {
-      return (
-        <div
-          className={`relative flex items-center justify-center overflow-hidden rounded-2xl bg-[#09090d] border border-[#d6be96]/15 ${className}`}
-        >
-          {fallbackImage ? (
-            <img
-              src={fallbackImage}
-              alt={`${label.titleLine1} ${label.titleLine2 ?? ''} perfume bottle`}
-              referrerPolicy="no-referrer"
-              className="w-full h-full object-contain sm:object-cover"
-            />
-          ) : (
-            <div className="text-center p-8">
-              <p className="font-serif-display text-3xl text-white">
-                {label.titleLine1} {label.titleLine2}
-              </p>
-              <p className="text-xs text-white/50 mt-2">{label.notesLine}</p>
-            </div>
-          )}
-        </div>
-      );
-    }
+    const handleToggleSpin = () => {
+      const next = !spinning;
+      setSpinning(next);
+      sceneRef.current?.updateStudioParams({ autoSpin: next });
+    };
 
-    const aura = STAGE_PERFUME_SHADOW_BY_PRESET[preset] ?? STAGE_PERFUME_SHADOW_BY_PRESET.amber;
+    const handleManualEnable3D = () => {
+      const check = probeWebGLCapability();
+      if (!check.hasBasicWebGL) {
+        setWebglFailed(true);
+        return;
+      }
+      setManual3DRequested(true);
+      setInView(true);
+    };
 
     return (
-      <div className={`relative select-none ${className}`}>
-        {/* Multi-layered Perfumed Mist Gradient & Plinth Refraction Shadow behind the 3D flacon */}
-        <div
-          aria-hidden="true"
-          className={`pointer-events-none absolute inset-0 transition-opacity duration-300 ${aura.ambientMist}`}
-        />
-        <div
-          aria-hidden="true"
-          className={`pointer-events-none absolute inset-0 transition-opacity duration-300 ${aura.floorPlinthGlow}`}
-        />
+      <div
+        ref={containerRef}
+        className={`relative w-full h-full select-none overflow-hidden bg-[#06060a] ${className}`}
+      >
+        {/* Lightweight Static Studio Image (always shown on Windows 7 / weak devices, and as instant placeholder before 3D boots) */}
+        {fallbackImage && !sceneReady && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center p-4 sm:p-6 bg-[#06060a]">
+            <LuxuryImage
+              src={fallbackImage}
+              alt={`${label.titleLine1} ${label.titleLine2 ?? ''}`.trim()}
+              priority={priorityImage}
+              className="w-full h-full max-h-[86%] object-contain"
+            />
+            <div className="mt-2 text-center pointer-events-none">
+              <p className="font-mono-tabular text-[10px] uppercase tracking-[0.22em] text-[#d6be96]/85">
+                {label.editionCode} · {label.volume}
+              </p>
+            </div>
 
-        {/* Dedicated isolated WebGL canvas container */}
-        <div ref={mountRef} className="relative z-[1] w-full h-full" />
+            {/* Optional manual 3D opt-in button on low-spec devices that still desire interactive inspection */}
+            {!shouldEnableWebGL && !webglFailed && interactiveControls && (
+              <button
+                type="button"
+                onClick={handleManualEnable3D}
+                className="absolute bottom-3.5 right-3.5 z-20 px-3 py-1.5 rounded-lg bg-[#0c0c12] border border-[#d6be96]/30 text-[11px] font-medium text-[#f2e6d5] hover:border-[#d6be96] transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <Sparkles className="w-3 h-3 text-[#d6be96]" />
+                <span>Interactive 3D</span>
+              </button>
+            )}
+          </div>
+        )}
 
-        {/* Discreet interactive 3D stage controls at bottom center (no backdrop-blur over WebGL) */}
-        {showControls && (
-          <div className="absolute bottom-2.5 sm:bottom-3 left-1/2 -translate-x-1/2 z-10 max-w-[calc(100%-1.25rem)] flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-[#0b0b10]/96 border border-white/12 shadow-[0_12px_32px_rgba(0,0,0,0.85)]">
+        {interactiveControls && sceneReady && (
+          <div className="absolute bottom-3 sm:bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 rounded-lg bg-[#0a0a0f]/95 border border-white/12 w-max max-w-[calc(100%-1.25rem)]">
             <button
               type="button"
-              onClick={toggleSpin}
-              className={`flex items-center gap-1.5 min-h-[36px] sm:min-h-0 px-2.5 py-1 rounded text-[11px] sm:text-[11.5px] font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                autoSpin ? 'bg-[#d6be96] text-[#050508]' : 'text-white/75 hover:text-white'
-              }`}
+              onClick={handleToggleExplode}
+              className="px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-medium tracking-wide text-white/90 hover:text-white bg-white/[0.06] hover:bg-white/[0.12] rounded-md transition-colors cursor-pointer whitespace-nowrap"
             >
-              <RotateCw className="w-3.5 h-3.5 shrink-0" />
-              <span>{autoSpin ? '360° Active' : '360° Orbit'}</span>
+              {isExploded ? 'Assemble Flacon' : 'Inspect Anatomy'}
             </button>
-
-            <span aria-hidden="true" className="text-white/20">
-              ·
-            </span>
-
             <button
               type="button"
-              onClick={toggleExplode}
-              className={`flex items-center gap-1.5 min-h-[36px] sm:min-h-0 px-2.5 py-1 rounded text-[11px] sm:text-[11.5px] font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                isExploded
-                  ? 'bg-[#d6be96]/18 text-[#d6be96]'
-                  : 'text-white/75 hover:text-[#d6be96]'
+              onClick={handleToggleSpin}
+              className={`px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-medium tracking-wide rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                spinning
+                  ? 'bg-[#d6be96]/20 text-[#f2e6d5] border border-[#d6be96]/40'
+                  : 'text-white/75 hover:text-white bg-white/[0.04] hover:bg-white/[0.1]'
               }`}
             >
-              <Sparkles className="w-3.5 h-3.5 shrink-0" />
-              <span className="sm:hidden">{isExploded ? 'Reassemble' : 'Deconstruct'}</span>
-              <span className="hidden sm:inline">
-                {isExploded ? 'Reassemble Flacon' : 'Deconstruct Flacon'}
-              </span>
+              {spinning ? 'Orbit: On' : '360° Orbit'}
             </button>
           </div>
         )}
@@ -236,3 +233,4 @@ export const ThreeBottleStage: React.FC<ThreeBottleStageProps> = React.memo(
     );
   },
 );
+ThreeBottleStage.displayName = 'ThreeBottleStage';
