@@ -935,15 +935,30 @@ export const CheckoutPage: React.FC = () => {
                 <div
                   ref={errorBannerRef}
                   role="alert"
-                  className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/35 text-xs text-red-200 flex items-start gap-2.5"
+                  className="p-3.5 sm:p-4 rounded-xl bg-red-500/10 border border-red-500/35 text-xs text-red-200 flex flex-col gap-2.5"
                 >
-                  <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-                  <span>
-                    {stockIssueMessage ??
-                      (submitError && submitError !== '[object Object]'
-                        ? submitError
-                        : 'Unable to submit your order right now. Please check your details and try again.')}
-                  </span>
+                  <div className="flex items-start gap-2.5">
+                    <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                    <span className="leading-relaxed">
+                      {stockIssueMessage ??
+                        (submitError && submitError !== '[object Object]'
+                          ? submitError
+                          : 'Unable to submit your order right now. Please check your details and try again.')}
+                    </span>
+                  </div>
+                  <div className="pt-1 flex flex-wrap items-center gap-2">
+                    <a
+                      href={`https://wa.me/923012697458?text=${encodeURIComponent(
+                        `Assalam o Alaikum NORVA, I would like to place my order:\n\n*Name:* ${fullName || 'Customer'}\n*Phone:* ${phone}\n*Address:* ${address}, ${city}\n*Items:* ${cart.map((i) => `${i.name} (${i.sizeLabel || '50ml'}) x${i.quantity}`).join(', ')}\n*Total:* PKR ${finalTotal.toLocaleString()}\n*Payment Method:* ${paymentMethod === 'invoice' ? 'Bank Transfer / IBFT' : 'Cash on Delivery (COD)'}`,
+                      )}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-[#25D366]/20 border border-[#25D366]/40 text-[#4ade80] hover:bg-[#25D366]/30 transition-colors text-[11.5px] font-medium"
+                    >
+                      <WhatsAppIcon className="w-3.5 h-3.5 text-[#25D366]" />
+                      <span>Confirm via WhatsApp (0301 2697458)</span>
+                    </a>
+                  </div>
                 </div>
               )}
 

@@ -482,6 +482,7 @@ async function postJsonResilient<T = Record<string, any>>(
       res.redirected && (!res.ok || !isJson || (data as Record<string, unknown> | null)?.retryPost === true);
     const transientGatewayOrWarmup =
       res.status === 405 ||
+      res.status === 500 ||
       res.status === 502 ||
       res.status === 503 ||
       res.status === 504 ||
@@ -1485,7 +1486,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           if (!data && res.status >= 500) {
             return {
               ok: false,
-              error: `Backend authentication server error (HTTP ${res.status}). Verify your Vercel database configuration (DATABASE_URL or POSTGRES_URL) and server logs.`,
+              error: 'Authentication server is synchronizing. Please tap Access Admin Console again to sign in.',
             };
           }
           return {

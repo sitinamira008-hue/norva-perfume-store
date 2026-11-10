@@ -5,7 +5,11 @@ const app = createExpressApp();
 
 export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
   try {
-    await ensureDatabaseReady();
+    try {
+      await ensureDatabaseReady();
+    } catch (warmupErr) {
+      console.warn('[NORVA Vercel DB Warmup Safe Fallback]:', warmupErr);
+    }
 
     // Normalize URL if a serverless rewrite forwarded /api/(.*) -> /api?__api_path=$1 or stripped /api
     const rawUrl = req.url || '/api';
