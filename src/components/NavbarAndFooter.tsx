@@ -17,7 +17,7 @@ import {
   useHeaderCounts,
   useOverlayState,
 } from '../context/StoreContext';
-import { WhatsAppIcon, getStoreWhatsAppChatUrl } from './WhatsAppFloatingButton';
+import { WhatsAppIcon, getStoreWhatsAppChatUrl, NORVA_WHATSAPP_DISPLAY } from './WhatsAppFloatingButton';
 
 export const Navbar: React.FC = React.memo(() => {
   const { cartCount, wishlistCount, unseenOrderCount, hasAdminSession } = useHeaderCounts();
@@ -335,7 +335,7 @@ export const Footer: React.FC = React.memo(() => {
               className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#25D366]/14 hover:bg-[#25D366]/24 border border-[#25D366]/35 text-xs font-medium text-[#36d67e] transition-colors"
             >
               <WhatsAppIcon className="w-4 h-4 text-[#25D366]" />
-              <span>Chat on WhatsApp · +92 310 7019192</span>
+              <span>Chat on WhatsApp · {NORVA_WHATSAPP_DISPLAY}</span>
             </a>
           </div>
         </div>

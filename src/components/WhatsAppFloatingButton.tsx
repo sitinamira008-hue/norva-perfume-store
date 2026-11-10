@@ -3,9 +3,9 @@ import { useLocation } from 'react-router-dom';
 import { formatPKR } from '../data/products';
 import type { PlacedOrder } from '../context/StoreContext';
 
-export const NORVA_WHATSAPP_DISPLAY = '+92 310 7019192';
+export const NORVA_WHATSAPP_DISPLAY = '+92 301 2697458';
 export const WHATSAPP_DISPLAY = NORVA_WHATSAPP_DISPLAY;
-const DEFAULT_WHATSAPP_DIGITS = '923107019192';
+const DEFAULT_WHATSAPP_DIGITS = '923012697458';
 
 export function getStoreWhatsAppDigits(): string {
   const envVal = (import.meta as unknown as { env?: Record<string, string | undefined> }).env
