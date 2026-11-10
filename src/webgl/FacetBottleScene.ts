@@ -1072,29 +1072,14 @@ export class FacetBottleScene {
 
     if (this.currentAssembly) {
       for (const part of this.currentAssembly.parts) {
-        const isHovered = this.hoveredPart === part && !this.isExploded;
-        const hoverAmt = stepSpring(part.liftSpring, isHovered ? 1 : 0, dt, 190, 21);
-
-        let targetTipX = 0;
-        let targetTipY = 0;
-        if (isHovered) {
-          const normX = THREE.MathUtils.clamp(this.hoveredHitLocal.x / 110, -1, 1);
-          const normY = THREE.MathUtils.clamp(this.hoveredHitLocal.y / 110, -1, 1);
-          targetTipY = -normX * 0.08;
-          targetTipX = normY * 0.08;
-        }
-        const tipX = stepSpring(part.tipXSpring, targetTipX, dt, 180, 20);
-        const tipY = stepSpring(part.tipYSpring, targetTipY, dt, 180, 20);
-
         this._tmpPos
           .copy(part.restPos)
-          .addScaledVector(part.hoverOffset, hoverAmt)
           .addScaledVector(part.explodeOffset, explodeT);
         part.group.position.copy(this._tmpPos);
 
         this._tmpEuler.set(
-          tipX + part.explodeRot.x * explodeT,
-          tipY + part.explodeRot.y * explodeT,
+          part.explodeRot.x * explodeT,
+          part.explodeRot.y * explodeT,
           part.explodeRot.z * explodeT,
         );
         part.group.rotation.copy(this._tmpEuler);

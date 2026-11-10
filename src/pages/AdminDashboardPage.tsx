@@ -684,7 +684,7 @@ export const AdminDashboardPage: React.FC = () => {
                   setLoginUsername(e.target.value);
                   setLoginError(null);
                 }}
-                placeholder="Enter admin username"
+                placeholder="Enter admin username (e.g. zn8xc)"
                 className="w-full h-11 px-3.5 rounded-lg bg-[#050508] border border-white/15 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-[#d6be96]"
               />
             </div>
